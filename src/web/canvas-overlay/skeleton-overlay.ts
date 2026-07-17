@@ -11,6 +11,17 @@ const VISIBLE_LANDMARK_INDICES = new Set<number>([
   LANDMARK_INDEX.rightShoulder,
 ]);
 
+// Both draw functions mirror horizontally (selfie view) purely for display —
+// FrameFeature is still computed from the raw, unmirrored landmarks, so
+// this has no effect on feature/detector math.
+function withMirror(ctx: CanvasRenderingContext2D, width: number, draw: () => void): void {
+  ctx.save();
+  ctx.translate(width, 0);
+  ctx.scale(-1, 1);
+  draw();
+  ctx.restore();
+}
+
 export function drawVideoFrame(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
@@ -18,13 +29,22 @@ export function drawVideoFrame(
   height: number,
 ): void {
   ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(video, 0, 0, width, height);
+  withMirror(ctx, width, () => ctx.drawImage(video, 0, 0, width, height));
 }
 
 // Day1 draft: draws the reliability-scoped skeleton over the video frame.
 // Calibration-guideline overlay (diffing against a reference skeleton)
 // is a later feature — see plan.md section 14.
 export function drawSkeleton(
+  ctx: CanvasRenderingContext2D,
+  landmarks: NormalizedLandmark[],
+  width: number,
+  height: number,
+): void {
+  withMirror(ctx, width, () => drawSkeletonPoints(ctx, landmarks, width, height));
+}
+
+function drawSkeletonPoints(
   ctx: CanvasRenderingContext2D,
   landmarks: NormalizedLandmark[],
   width: number,
