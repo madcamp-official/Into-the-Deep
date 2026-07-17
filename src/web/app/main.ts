@@ -1,6 +1,6 @@
 import { startWebcam } from "../camera-adapter/webcam";
 import { createPoseLandmarker, detectPoseForVideoFrame } from "../camera-adapter/pose-landmarker";
-import { drawSkeleton } from "../canvas-overlay/skeleton-overlay";
+import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
 
 async function main() {
@@ -37,6 +37,8 @@ async function main() {
     const result = detectPoseForVideoFrame(landmarker, video, performance.now());
     const landmarks = result.landmarks[0];
 
+    drawVideoFrame(ctx, video, canvas.width, canvas.height);
+
     if (landmarks) {
       drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
       const feature = toFrameFeature(landmarks, performance.now());
@@ -44,7 +46,6 @@ async function main() {
         status.textContent = JSON.stringify(feature, null, 2);
       }
     } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
       status.textContent = "no person detected";
     }
 
