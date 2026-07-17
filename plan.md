@@ -1114,9 +1114,12 @@ Replay Evaluator
 - 폴더 구조 생성
 - ESLint, typecheck, build 스크립트 설정
 - CI/CD 초기 세팅
-    - lint
-    - typecheck
-    - build
+   * package.json 스크립트 작성
+      * lint: eslint . --ext .ts
+      * typecheck: tsc --noEmit
+      * build: vite build
+   * .github/workflows/ci.yml 작성 (push/PR 시 lint → typecheck → build 순으로 자동 실행)
+   * GitHub Actions 탭에서 통과(초록불) 확인
 - 핵심 interface 정의
 - sample JSON 로그 형식 정의
 - mock 데이터 생성
