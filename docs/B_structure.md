@@ -76,13 +76,53 @@ Current behavior:
 - Keeps `sustainedSeconds` in the config for V0 completion, but Day 1 currently
   evaluates a single frame only.
 
+### Profile baseline demo
+
+File: `src/core/profile-baseline-demo.ts`
+
+This file provides a small mock flow for checking B's Day 1 implementation.
+
+```text
+stableCalibrationFrames
+  -> buildUserProfile()
+  -> evaluateV0(stableCheckFrame)
+  -> evaluateV0(driftCheckFrame)
+```
+
+Expected result:
+
+- `stableResult`: `state: "STABLE"`, `alert: false`, `reason: []`
+- `driftResult`: `state: "BAD"`, `alert: true`, with exceeded feature names in
+  `reason`
+
+### IndexedDB profile storage
+
+File: `src/web/indexeddb-storage/index.ts`
+
+This module stores and loads B's calibration output in the browser.
+
+Current behavior:
+
+- Opens the `posture-core` IndexedDB database.
+- Creates a `profiles` object store when the database is first initialized.
+- Saves one default profile bundle with key `"default"`.
+- Loads that default profile bundle, returning `null` when nothing is saved yet.
+
+Stored shape:
+
+```ts
+{
+  userProfile,
+  cameraProfile,
+  lastCalibrationAt
+}
+```
+
 ## Next Work
 
-1. Add simple mock execution so `buildUserProfile` and V0 can be checked with
-   sample `FrameFeature` data.
-2. Implement IndexedDB profile save/load draft in
-   `src/web/indexeddb-storage/index.ts`.
-3. Keep `npm run lint`, `npm run typecheck`, and `npm run build` passing.
+1. Wire the profile baseline demo into a temporary manual check path or a small
+   automated test.
+2. Keep `npm run lint`, `npm run typecheck`, and `npm run build` passing.
 
 ## Day 1 Completion Target
 
