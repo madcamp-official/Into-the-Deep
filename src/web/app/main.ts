@@ -2,6 +2,9 @@ import { startWebcam } from "../camera-adapter/webcam";
 import { createPoseLandmarker, detectPoseForVideoFrame } from "../camera-adapter/pose-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
+import { toCameraRawFeature } from "../../core/camera-profile";
+import { assessLandmarkQuality } from "../../core/landmark-reliability";
+import type { FrameFeature } from "../../core/types";
 
 async function main() {
   const app = document.querySelector<HTMLDivElement>("#app");
@@ -33,21 +36,31 @@ async function main() {
 
   status.textContent = "running";
 
+  let previousFeature: FrameFeature | null = null;
+
   const loop = () => {
-    const result = detectPoseForVideoFrame(landmarker, video, performance.now());
+    const timestamp = performance.now();
+    const result = detectPoseForVideoFrame(landmarker, video, timestamp);
     const landmarks = result.landmarks[0];
 
     drawVideoFrame(ctx, video, canvas.width, canvas.height);
 
-    if (landmarks) {
-      drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
-      const feature = toFrameFeature(landmarks, performance.now());
-      if (feature) {
-        status.textContent = JSON.stringify(feature, null, 2);
-      }
-    } else {
-      status.textContent = "no person detected";
+    const quality = assessLandmarkQuality(landmarks, timestamp);
+
+    if (!quality.reliable) {
+      previousFeature = null;
+      status.textContent = `UNKNOWN\n${JSON.stringify(quality, null, 2)}`;
+      requestAnimationFrame(loop);
+      return;
     }
+
+    drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
+
+    const feature = toFrameFeature(landmarks, timestamp, previousFeature);
+    const cameraRawFeature = toCameraRawFeature(landmarks, timestamp);
+    previousFeature = feature;
+
+    status.textContent = JSON.stringify({ quality, feature, cameraRawFeature }, null, 2);
 
     requestAnimationFrame(loop);
   };
