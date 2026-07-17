@@ -18,15 +18,94 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   sustainedSeconds: 1.5,
 };
 
-// TODO(B): compare `feature` against calibration centers using DEFAULT_THRESHOLDS,
-// track BAD duration, and emit a DetectionEvent once sustainedSeconds is exceeded.
 export function evaluateV0(
   feature: FrameFeature,
   referenceCenters: Record<string, number>,
   thresholds: FixedThresholds = DEFAULT_THRESHOLDS,
 ): DetectionEvent {
-  void feature;
-  void referenceCenters;
-  void thresholds;
-  throw new Error("not implemented");
+  const reason: string[] = [];
+
+  if (
+    exceedsAbsoluteThreshold(
+      feature.shoulderTilt,
+      referenceCenters.shoulderTilt,
+      thresholds.shoulderTiltDeg,
+    )
+  ) {
+    reason.push("shoulderTilt");
+  }
+
+  if (
+    exceedsAbsoluteThreshold(
+      feature.headXOffset,
+      referenceCenters.headXOffset,
+      thresholds.headXOffsetRatio,
+    )
+  ) {
+    reason.push("headXOffset");
+  }
+
+  if (
+    exceedsAbsoluteThreshold(
+      feature.headYOffset,
+      referenceCenters.headYOffset,
+      thresholds.headYOffsetRatio,
+    )
+  ) {
+    reason.push("headYOffset");
+  }
+
+  if (
+    exceedsIncreaseRatio(
+      feature.bodyScale,
+      referenceCenters.bodyScale,
+      thresholds.bodyScaleIncreaseRatio,
+    )
+  ) {
+    reason.push("bodyScale");
+  }
+
+  if (
+    feature.torsoLean !== undefined &&
+    exceedsAbsoluteThreshold(
+      feature.torsoLean,
+      referenceCenters.torsoLean,
+      thresholds.torsoLeanDeg,
+    )
+  ) {
+    reason.push("torsoLean");
+  }
+
+  const bad = reason.length > 0;
+
+  return {
+    timestamp: feature.timestamp,
+    state: bad ? "BAD" : "STABLE",
+    alert: bad,
+    reason,
+  };
+}
+
+function exceedsAbsoluteThreshold(
+  currentValue: number,
+  referenceValue: number | undefined,
+  threshold: number,
+): boolean {
+  if (referenceValue === undefined) {
+    return false;
+  }
+
+  return Math.abs(currentValue - referenceValue) > threshold;
+}
+
+function exceedsIncreaseRatio(
+  currentValue: number,
+  referenceValue: number | undefined,
+  increaseRatio: number,
+): boolean {
+  if (referenceValue === undefined || referenceValue <= 0) {
+    return false;
+  }
+
+  return currentValue > referenceValue * (1 + increaseRatio);
 }
