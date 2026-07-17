@@ -2,13 +2,18 @@ import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { FrameFeature } from "../types";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
 
-// Day1 draft of the FrameFeature calculation described in plan.md section 8.
-// Coordinates are normalized to shoulder-center origin / shoulder-width
-// scale rather than raw pixels. `motionEnergy` and jump/confidence
-// filtering land on Day2 once B/C have something to consume.
+// FrameFeature calculation described in plan.md section 8. Coordinates are
+// normalized to shoulder-center origin / shoulder-width scale rather than
+// raw pixels. Sudden landmark-jump rejection is a Day3 concern once we have
+// a motion-energy baseline to judge jumps against.
+//
+// `previous` is the last FrameFeature (if any) — passing it lets this
+// compute a real motionEnergy value; omit it (or pass null) to get 0, e.g.
+// on the first frame or right after a reliability gap.
 export function toFrameFeature(
   landmarks: NormalizedLandmark[],
   timestamp: number,
+  previous?: FrameFeature | null,
 ): FrameFeature | null {
   const nose = landmarks[LANDMARK_INDEX.nose];
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
@@ -31,19 +36,27 @@ export function toFrameFeature(
       180) /
     Math.PI;
 
-  const confidence = Math.min(
-    nose.visibility ?? 1,
-    leftShoulder.visibility ?? 1,
-    rightShoulder.visibility ?? 1,
-  );
+  const confidence = Math.min(nose.visibility, leftShoulder.visibility, rightShoulder.visibility);
+  const headXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
+  const headYOffset = shoulderWidth > 0 ? (nose.y - shoulderCenterY) / shoulderWidth : 0;
+  const bodyScale = shoulderWidth;
+
+  const motionEnergy = previous
+    ? Math.hypot(
+        headXOffset - previous.headXOffset,
+        headYOffset - previous.headYOffset,
+        shoulderTilt - previous.shoulderTilt,
+        bodyScale - previous.bodyScale,
+      )
+    : 0;
 
   return {
     timestamp,
     confidence,
     shoulderTilt,
-    headXOffset: shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0,
-    headYOffset: shoulderWidth > 0 ? (nose.y - shoulderCenterY) / shoulderWidth : 0,
-    bodyScale: shoulderWidth,
-    motionEnergy: 0,
+    headXOffset,
+    headYOffset,
+    bodyScale,
+    motionEnergy,
   };
 }
