@@ -22,8 +22,12 @@ export function toFrameFeature(
     rightShoulder.y - leftShoulder.y,
   );
 
+  // Angle measured from the anatomical right shoulder to the left shoulder.
+  // In an unmirrored camera frame, the anatomical left shoulder sits at a
+  // higher x than the right, so this convention keeps the tilt near 0 for
+  // level shoulders instead of near +-180.
   const shoulderTilt =
-    (Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) *
+    (Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x) *
       180) /
     Math.PI;
 
