@@ -95,10 +95,33 @@ Expected result:
 - `driftResult`: `state: "BAD"`, `alert: true`, with exceeded feature names in
   `reason`
 
+### IndexedDB profile storage
+
+File: `src/web/indexeddb-storage/index.ts`
+
+This module stores and loads B's calibration output in the browser.
+
+Current behavior:
+
+- Opens the `posture-core` IndexedDB database.
+- Creates a `profiles` object store when the database is first initialized.
+- Saves one default profile bundle with key `"default"`.
+- Loads that default profile bundle, returning `null` when nothing is saved yet.
+
+Stored shape:
+
+```ts
+{
+  userProfile,
+  cameraProfile,
+  lastCalibrationAt
+}
+```
+
 ## Next Work
 
-1. Implement IndexedDB profile save/load draft in
-   `src/web/indexeddb-storage/index.ts`.
+1. Wire the profile baseline demo into a temporary manual check path or a small
+   automated test.
 2. Keep `npm run lint`, `npm run typecheck`, and `npm run build` passing.
 
 ## Day 1 Completion Target
