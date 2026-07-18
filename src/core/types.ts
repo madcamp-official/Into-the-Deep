@@ -82,6 +82,8 @@ export interface LandmarkQuality {
   shouldersInFrame: boolean;
   confidence: number;
   reliable: boolean;
+  eyesReliable: boolean;
+  earsReliable: boolean;
 }
 
 export interface ScenarioLabel {
