@@ -8,6 +8,8 @@ const PROFILE_FEATURES = [
   "shoulderXOffset",
   "shoulderYOffset",
   "bodyScale",
+  "faceToShoulderRatio",
+  "pitchProxy",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {
@@ -19,10 +21,16 @@ export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile
   const featureDeviations: Record<string, number> = {};
 
   for (const feature of PROFILE_FEATURES) {
-    const values = validFrames.map((frame) => frame[feature]);
+    const values = validFrames
+      .map((frame) => frame[feature])
+      .filter((value): value is number => value !== undefined);
+    if (values.length === 0) {
+      continue;
+    }
+
     const average =
       values.reduce((sum, value) => sum + value, 0) /
-      Math.max(values.length, 1);
+      values.length;
 
     originalCenters[feature] = average;
     featureDeviations[feature] = 0;

@@ -17,6 +17,9 @@ export const stableCalibrationFrames: FrameFeature[] = [
     shoulderXOffset: 0.5,
     shoulderYOffset: 0.42,
     bodyScale: 1,
+    faceToShoulderRatio: 0.28,
+    pitchProxy: 0.2,
+    torsoLean: 2,
     motionEnergy: 0.04,
   },
   {
@@ -27,6 +30,9 @@ export const stableCalibrationFrames: FrameFeature[] = [
     shoulderXOffset: 0.505,
     shoulderYOffset: 0.425,
     bodyScale: 1.01,
+    faceToShoulderRatio: 0.285,
+    pitchProxy: 0.205,
+    torsoLean: 2.2,
     motionEnergy: 0.05,
   },
   {
@@ -37,6 +43,8 @@ export const stableCalibrationFrames: FrameFeature[] = [
     shoulderXOffset: 0.7,
     shoulderYOffset: 0.6,
     bodyScale: 1.4,
+    faceToShoulderRatio: 0.38,
+    pitchProxy: 0.35,
     motionEnergy: 0.7,
   },
 ];
@@ -49,6 +57,9 @@ export const stableCheckFrame: FrameFeature = {
   shoulderXOffset: 0.502,
   shoulderYOffset: 0.422,
   bodyScale: 1.005,
+  faceToShoulderRatio: 0.282,
+  pitchProxy: 0.202,
+  torsoLean: 2.1,
   motionEnergy: 0.04,
 };
 
@@ -60,6 +71,9 @@ export const driftCheckFrame: FrameFeature = {
   shoulderXOffset: 0.75,
   shoulderYOffset: 0.65,
   bodyScale: 1.33,
+  faceToShoulderRatio: 0.36,
+  pitchProxy: 0.31,
+  torsoLean: 14,
   motionEnergy: 0.06,
 };
 

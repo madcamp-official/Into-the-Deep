@@ -8,6 +8,8 @@ const referenceCenters: Record<string, number> = {
   shoulderXOffset: 0.5,
   shoulderYOffset: 0.4,
   bodyScale: 1,
+  faceToShoulderRatio: 0.28,
+  pitchProxy: 0.2,
 };
 
 describe("createV0Detector", () => {

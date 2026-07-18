@@ -8,6 +8,8 @@ const referenceCenters: Record<string, number> = {
   shoulderXOffset: 0,
   shoulderYOffset: 0,
   bodyScale: 1,
+  faceToShoulderRatio: 0.28,
+  pitchProxy: 0.2,
 };
 
 describe("evaluateV0", () => {
@@ -69,6 +71,65 @@ describe("evaluateV0", () => {
       alert: true,
       reason: ["shoulderXOffset"],
     });
+  });
+
+  it("flags BAD with forwardHead when face ratio and pitch increase without body scale drift", () => {
+    const feature: FrameFeature = {
+      timestamp: 4,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale: 1.05,
+      faceToShoulderRatio:
+        referenceCenters.faceToShoulderRatio *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadFaceRatioIncrease + 0.02),
+      pitchProxy:
+        referenceCenters.pitchProxy +
+        DEFAULT_THRESHOLDS.forwardHeadPitchDeltaRatio +
+        0.02,
+      motionEnergy: 0.1,
+    };
+
+    expect(evaluateV0(feature, referenceCenters)).toEqual({
+      timestamp: 4,
+      state: "BAD",
+      alert: true,
+      reason: ["forwardHead"],
+    });
+  });
+
+  it("does not flag forwardHead when body scale changes too much", () => {
+    const feature: FrameFeature = {
+      timestamp: 5,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale:
+        referenceCenters.bodyScale *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadBodyScaleToleranceRatio + 0.02),
+      faceToShoulderRatio:
+        referenceCenters.faceToShoulderRatio *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadFaceRatioIncrease + 0.02),
+      pitchProxy:
+        referenceCenters.pitchProxy +
+        DEFAULT_THRESHOLDS.forwardHeadPitchDeltaRatio +
+        0.02,
+      motionEnergy: 0.1,
+    };
+
+    const event = evaluateV0(feature, referenceCenters);
+
+    expect(event).toEqual({
+      timestamp: 5,
+      state: "BAD",
+      alert: true,
+      reason: ["bodyScale"],
+    });
+    expect(event.reason).not.toContain("forwardHead");
   });
 });
 

@@ -153,6 +153,13 @@ async function main() {
     status.textContent = [
       "camera: not assessed yet (Day3 CameraProfile)",
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
+      feature.faceToShoulderRatio !== undefined
+        ? `face/shoulder ratio: ${feature.faceToShoulderRatio.toFixed(3)}`
+        : "",
+      getDeltaLine("face/shoulder delta", feature.faceToShoulderRatio, profile?.originalCenters.faceToShoulderRatio),
+      feature.pitchProxy !== undefined ? `pitch proxy: ${feature.pitchProxy.toFixed(3)}` : "",
+      getDeltaLine("pitch delta", feature.pitchProxy, profile?.originalCenters.pitchProxy),
+      getRatioDeltaLine("bodyScale delta", feature.bodyScale, profile?.originalCenters.bodyScale),
       `calibrated: ${profile ? "yes" : "no"}`,
       calibrationFrames ? "calibrating..." : "",
       `recording: ${recorder.isRecording() ? "yes" : "no"}`,
@@ -167,6 +174,31 @@ async function main() {
   };
 
   requestAnimationFrame(loop);
+}
+
+function getDeltaLine(
+  label: string,
+  currentValue: number | undefined,
+  referenceValue: number | undefined,
+): string {
+  if (currentValue === undefined || referenceValue === undefined) {
+    return "";
+  }
+
+  return `${label}: ${(currentValue - referenceValue).toFixed(3)}`;
+}
+
+function getRatioDeltaLine(
+  label: string,
+  currentValue: number,
+  referenceValue: number | undefined,
+): string {
+  if (referenceValue === undefined || referenceValue <= 0) {
+    return "";
+  }
+
+  const deltaRatio = (currentValue - referenceValue) / referenceValue;
+  return `${label}: ${(deltaRatio * 100).toFixed(1)}%`;
 }
 
 main().catch((error) => {
