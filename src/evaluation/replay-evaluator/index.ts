@@ -2,7 +2,7 @@ import type { DetectionEvent } from "../../core/types";
 import type { SessionLogEntry } from "../recorder";
 import {
   DEFAULT_THRESHOLDS,
-  evaluateV0,
+  FixedThresholdDetector,
   type FixedThresholds,
 } from "../../core/fixed-threshold-detector";
 
@@ -17,26 +17,24 @@ export function replay(
   return entries.map(detector);
 }
 
-// Wires B's V0 fixed-threshold detector up as a replay Detector so a stored
-// session log can produce a DetectionEvent stream end-to-end (Day2 target).
+// Wires B's sustained V0 fixed-threshold detector into replay so stored
+// JSONL logs follow the same alert timing as the live app.
 export function createV0Detector(
   referenceCenters: Record<string, number>,
   thresholds: FixedThresholds = DEFAULT_THRESHOLDS,
 ): Detector {
+  const detector = new FixedThresholdDetector(referenceCenters, thresholds);
+
   return (entry) =>
-    evaluateV0(
-      {
-        timestamp: entry.timestamp,
-        confidence: entry.confidence,
-        shoulderTilt: entry.features.shoulderTilt,
-        headXOffset: entry.features.headXOffset,
-        shoulderXOffset: entry.features.shoulderXOffset,
-        shoulderYOffset: entry.features.shoulderYOffset,
-        bodyScale: entry.features.bodyScale,
-        torsoLean: entry.features.torsoLean,
-        motionEnergy: entry.features.motionEnergy,
-      },
-      referenceCenters,
-      thresholds,
-    );
+    detector.update({
+      timestamp: entry.timestamp,
+      confidence: entry.confidence,
+      shoulderTilt: entry.features.shoulderTilt,
+      headXOffset: entry.features.headXOffset,
+      shoulderXOffset: entry.features.shoulderXOffset,
+      shoulderYOffset: entry.features.shoulderYOffset,
+      bodyScale: entry.features.bodyScale,
+      torsoLean: entry.features.torsoLean,
+      motionEnergy: entry.features.motionEnergy,
+    });
 }
