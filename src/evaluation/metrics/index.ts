@@ -19,6 +19,11 @@ const DRIFT_LABELS: ReadonlySet<ScenarioLabel["label"]> = new Set([
 
 const DETECTION_WINDOW_SECONDS = 10;
 
+// `ScenarioLabel.timestamp` / `DetectionEvent.timestamp` are milliseconds
+// (matching `performance.now()` and `FixedThresholdDetector`/
+// `PersonalizedDriftDetector`'s sustained-duration math), so every ms
+// difference below is divided by 1000 before being compared against or
+// reported as a "seconds" quantity.
 interface AlertEpisode {
   startTimestamp: number;
 }
@@ -48,7 +53,7 @@ function computeFalseAlertsPerHour(
 ): number {
   const normalSegments = segments.filter((segment) => segment.label === "NORMAL_WORK");
   const normalWorkSeconds = normalSegments.reduce(
-    (sum, segment) => sum + (segment.endTimestamp - segment.startTimestamp),
+    (sum, segment) => sum + (segment.endTimestamp - segment.startTimestamp) / 1000,
     0,
   );
   if (normalWorkSeconds <= 0) return 0;
@@ -78,10 +83,10 @@ function computeDriftDetection(
     const detectingEpisode = episodes.find(
       (episode) =>
         episode.startTimestamp >= segment.startTimestamp &&
-        episode.startTimestamp <= segment.startTimestamp + DETECTION_WINDOW_SECONDS,
+        (episode.startTimestamp - segment.startTimestamp) / 1000 <= DETECTION_WINDOW_SECONDS,
     );
     if (detectingEpisode) {
-      delays.push(detectingEpisode.startTimestamp - segment.startTimestamp);
+      delays.push((detectingEpisode.startTimestamp - segment.startTimestamp) / 1000);
     }
   }
 
