@@ -5,7 +5,8 @@ import type { FrameFeature } from "../types";
 const referenceCenters: Record<string, number> = {
   shoulderTilt: 0,
   headXOffset: 0,
-  headYOffset: 0,
+  shoulderXOffset: 0,
+  shoulderYOffset: 0,
   bodyScale: 1,
 };
 
@@ -16,7 +17,8 @@ describe("evaluateV0", () => {
       confidence: 0.95,
       shoulderTilt: 0.5,
       headXOffset: 0.01,
-      headYOffset: 0.01,
+      shoulderXOffset: 0.01,
+      shoulderYOffset: 0.01,
       bodyScale: 1.02,
       motionEnergy: 0.03,
     };
@@ -29,13 +31,14 @@ describe("evaluateV0", () => {
     });
   });
 
-  it("flags BAD with the offending reasons when shoulderTilt and headYOffset exceed thresholds", () => {
+  it("flags BAD with the offending reasons when shoulderTilt and shoulderYOffset exceed thresholds", () => {
     const feature: FrameFeature = {
       timestamp: 2,
       confidence: 0.9,
       shoulderTilt: referenceCenters.shoulderTilt + DEFAULT_THRESHOLDS.shoulderTiltDeg + 1,
       headXOffset: 0,
-      headYOffset: referenceCenters.headYOffset + DEFAULT_THRESHOLDS.headYOffsetRatio + 0.05,
+      shoulderXOffset: 0,
+      shoulderYOffset: referenceCenters.shoulderYOffset + DEFAULT_THRESHOLDS.shoulderYOffsetRatio + 0.05,
       bodyScale: 1,
       motionEnergy: 0.1,
     };
@@ -44,7 +47,27 @@ describe("evaluateV0", () => {
       timestamp: 2,
       state: "BAD",
       alert: true,
-      reason: ["shoulderTilt", "headYOffset"],
+      reason: ["shoulderTilt", "shoulderYOffset"],
+    });
+  });
+
+  it("flags BAD with shoulderXOffset when the shoulders shift sideways past the threshold", () => {
+    const feature: FrameFeature = {
+      timestamp: 3,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: referenceCenters.shoulderXOffset + DEFAULT_THRESHOLDS.shoulderXOffsetRatio + 0.05,
+      shoulderYOffset: 0,
+      bodyScale: 1,
+      motionEnergy: 0.1,
+    };
+
+    expect(evaluateV0(feature, referenceCenters)).toEqual({
+      timestamp: 3,
+      state: "BAD",
+      alert: true,
+      reason: ["shoulderXOffset"],
     });
   });
 });
@@ -58,14 +81,14 @@ describe("FixedThresholdDetector", () => {
       timestamp: 0,
       state: "BAD",
       alert: false,
-      reason: ["headYOffset"],
+      reason: ["shoulderYOffset"],
     });
 
     expect(detector.update(createBadFrame(1.49))).toMatchObject({
       timestamp: 1.49,
       state: "BAD",
       alert: false,
-      reason: ["headYOffset"],
+      reason: ["shoulderYOffset"],
     });
   });
 
@@ -78,7 +101,7 @@ describe("FixedThresholdDetector", () => {
       timestamp: 11.5,
       state: "BAD",
       alert: true,
-      reason: ["headYOffset"],
+      reason: ["shoulderYOffset"],
     });
   });
 
@@ -98,7 +121,7 @@ describe("FixedThresholdDetector", () => {
       timestamp: 22,
       state: "BAD",
       alert: false,
-      reason: ["headYOffset"],
+      reason: ["shoulderYOffset"],
     });
   });
 });
@@ -109,7 +132,8 @@ function createStableFrame(timestamp: number): FrameFeature {
     confidence: 0.95,
     shoulderTilt: 0,
     headXOffset: 0,
-    headYOffset: 0,
+    shoulderXOffset: 0,
+    shoulderYOffset: 0,
     bodyScale: 1,
     motionEnergy: 0.03,
   };
@@ -118,6 +142,6 @@ function createStableFrame(timestamp: number): FrameFeature {
 function createBadFrame(timestamp: number): FrameFeature {
   return {
     ...createStableFrame(timestamp),
-    headYOffset: DEFAULT_THRESHOLDS.headYOffsetRatio + 0.01,
+    shoulderYOffset: DEFAULT_THRESHOLDS.shoulderYOffsetRatio + 0.01,
   };
 }

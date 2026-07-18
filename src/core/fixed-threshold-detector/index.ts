@@ -3,7 +3,8 @@ import type { FrameFeature, DetectionEvent } from "../types";
 export interface FixedThresholds {
   shoulderTiltDeg: number;
   headXOffsetRatio: number;
-  headYOffsetRatio: number;
+  shoulderXOffsetRatio: number;
+  shoulderYOffsetRatio: number;
   bodyScaleIncreaseRatio: number;
   torsoLeanDeg: number;
   sustainedSeconds: number;
@@ -12,7 +13,8 @@ export interface FixedThresholds {
 export const DEFAULT_THRESHOLDS: FixedThresholds = {
   shoulderTiltDeg: 8,
   headXOffsetRatio: 0.2,
-  headYOffsetRatio: 0.18,
+  shoulderXOffsetRatio: 0.15,
+  shoulderYOffsetRatio: 0.18,
   bodyScaleIncreaseRatio: 0.25,
   torsoLeanDeg: 10,
   sustainedSeconds: 1.5,
@@ -47,12 +49,22 @@ export function evaluateV0(
 
   if (
     exceedsAbsoluteThreshold(
-      feature.headYOffset,
-      referenceCenters.headYOffset,
-      thresholds.headYOffsetRatio,
+      feature.shoulderXOffset,
+      referenceCenters.shoulderXOffset,
+      thresholds.shoulderXOffsetRatio,
     )
   ) {
-    reason.push("headYOffset");
+    reason.push("shoulderXOffset");
+  }
+
+  if (
+    exceedsAbsoluteThreshold(
+      feature.shoulderYOffset,
+      referenceCenters.shoulderYOffset,
+      thresholds.shoulderYOffsetRatio,
+    )
+  ) {
+    reason.push("shoulderYOffset");
   }
 
   if (

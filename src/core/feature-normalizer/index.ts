@@ -38,13 +38,22 @@ export function toFrameFeature(
 
   const confidence = Math.min(nose.visibility, leftShoulder.visibility, rightShoulder.visibility);
   const headXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
-  const headYOffset = shoulderWidth > 0 ? (nose.y - shoulderCenterY) / shoulderWidth : 0;
   const bodyScale = shoulderWidth;
+
+  // Raw (frame-normalized) shoulder-center position rather than an offset
+  // from another landmark: there's nothing else to measure the shoulders
+  // against, so drift is judged directly against the calibrated reference
+  // center in evaluateV0. shoulderXOffset tracks sideways shifting (e.g.
+  // sliding sideways in a chair); shoulderYOffset tracks shoulders
+  // rising/dropping and replaces headYOffset as the posture-height signal.
+  const shoulderXOffset = shoulderCenterX;
+  const shoulderYOffset = shoulderCenterY;
 
   const motionEnergy = previous
     ? Math.hypot(
         headXOffset - previous.headXOffset,
-        headYOffset - previous.headYOffset,
+        shoulderXOffset - previous.shoulderXOffset,
+        shoulderYOffset - previous.shoulderYOffset,
         shoulderTilt - previous.shoulderTilt,
         bodyScale - previous.bodyScale,
       )
@@ -55,7 +64,8 @@ export function toFrameFeature(
     confidence,
     shoulderTilt,
     headXOffset,
-    headYOffset,
+    shoulderXOffset,
+    shoulderYOffset,
     bodyScale,
     motionEnergy,
   };
