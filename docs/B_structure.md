@@ -44,6 +44,7 @@ Current behavior:
   - `bodyScale`
   - `faceToShoulderRatio`, when available
   - `pitchProxy`, when available
+  - `yawProxy`, when available
 - Stores those averages in `originalCenters`.
 - Initializes `adaptiveCenters` with the same values as `originalCenters`.
 - Initializes `featureDeviations` as `0` for Day 1.
@@ -75,6 +76,8 @@ Current behavior:
   - `bodyScale`
   - `forwardHead` (face-to-shoulder ratio increase plus pitch increase,
     only when body scale remains close to the calibration body scale)
+  - `yawProxy` (head-turn asymmetry between the nose and both ears), only
+    when present
 - Returns `state: "BAD"` and `alert: true` if at least one feature exceeds a
   threshold.
 - Returns `state: "STABLE"` and `alert: false` when no feature exceeds a

@@ -18,6 +18,8 @@ export function toFrameFeature(
   const nose = landmarks[LANDMARK_INDEX.nose];
   const leftEye = landmarks[LANDMARK_INDEX.leftEye];
   const rightEye = landmarks[LANDMARK_INDEX.rightEye];
+  const leftEar = landmarks[LANDMARK_INDEX.leftEar];
+  const rightEar = landmarks[LANDMARK_INDEX.rightEar];
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!nose || !leftShoulder || !rightShoulder) return null;
@@ -48,6 +50,17 @@ export function toFrameFeature(
     eyeDistance !== undefined && shoulderWidth > 0 ? eyeDistance / shoulderWidth : undefined;
   const pitchProxy =
     faceCenterY !== undefined && shoulderWidth > 0 ? (nose.y - faceCenterY) / shoulderWidth : undefined;
+
+  // Head-turn proxy: how asymmetric the nose sits between the two ears,
+  // mirrors camera-profile's yawProxy. Facing the camera straight-on keeps
+  // this near 0; turning the head left/right pushes it toward +-1.
+  let yawProxy: number | undefined;
+  if (leftEar && rightEar) {
+    const leftDist = Math.abs(nose.x - leftEar.x);
+    const rightDist = Math.abs(nose.x - rightEar.x);
+    const total = leftDist + rightDist;
+    yawProxy = total > 0 ? (leftDist - rightDist) / total : 0;
+  }
 
   // Shoulder-center position scaled by shoulder width, same convention as
   // headXOffset. Raw frame-normalized position would confound camera
@@ -82,6 +95,7 @@ export function toFrameFeature(
     bodyScale,
     ...(faceToShoulderRatio !== undefined ? { faceToShoulderRatio } : {}),
     ...(pitchProxy !== undefined ? { pitchProxy } : {}),
+    ...(yawProxy !== undefined ? { yawProxy } : {}),
     motionEnergy,
   };
 }

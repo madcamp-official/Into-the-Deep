@@ -10,6 +10,7 @@ const referenceCenters: Record<string, number> = {
   bodyScale: 1,
   faceToShoulderRatio: 0.28,
   pitchProxy: 0.2,
+  yawProxy: 0,
 };
 
 describe("evaluateV0", () => {
@@ -130,6 +131,27 @@ describe("evaluateV0", () => {
       reason: ["bodyScale"],
     });
     expect(event.reason).not.toContain("forwardHead");
+  });
+
+  it("flags BAD with yawProxy when the head turns past the threshold", () => {
+    const feature: FrameFeature = {
+      timestamp: 6,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale: 1,
+      yawProxy: referenceCenters.yawProxy + DEFAULT_THRESHOLDS.yawProxyRatio + 0.05,
+      motionEnergy: 0.1,
+    };
+
+    expect(evaluateV0(feature, referenceCenters)).toEqual({
+      timestamp: 6,
+      state: "BAD",
+      alert: true,
+      reason: ["yawProxy"],
+    });
   });
 });
 

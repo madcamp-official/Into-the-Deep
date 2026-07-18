@@ -9,6 +9,7 @@ export interface FixedThresholds {
   forwardHeadFaceRatioIncrease: number;
   forwardHeadBodyScaleToleranceRatio: number;
   forwardHeadPitchDeltaRatio: number;
+  yawProxyRatio: number;
   sustainedSeconds: number;
 }
 
@@ -21,6 +22,9 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   forwardHeadFaceRatioIncrease: 0.025,
   forwardHeadBodyScaleToleranceRatio: 0.3,
   forwardHeadPitchDeltaRatio: 0.01,
+  // Candidate value, not yet tuned against a development session (plan.md
+  // "정면 약 30도" is a rough qualitative guide, not a ratio in this unit).
+  yawProxyRatio: 0.3,
   sustainedSeconds: 1.5,
 };
 
@@ -83,6 +87,17 @@ export function evaluateV0(
 
   if (isForwardHead(feature, referenceCenters, thresholds)) {
     reason.push("forwardHead");
+  }
+
+  if (
+    feature.yawProxy !== undefined &&
+    exceedsAbsoluteThreshold(
+      feature.yawProxy,
+      referenceCenters.yawProxy,
+      thresholds.yawProxyRatio,
+    )
+  ) {
+    reason.push("yawProxy");
   }
 
   const bad = reason.length > 0;

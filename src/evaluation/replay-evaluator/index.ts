@@ -36,6 +36,7 @@ export function createV0Detector(
       bodyScale: entry.features.bodyScale,
       faceToShoulderRatio: entry.features.faceToShoulderRatio,
       pitchProxy: entry.features.pitchProxy,
+      yawProxy: entry.features.yawProxy,
       motionEnergy: entry.features.motionEnergy,
     });
 }

@@ -10,6 +10,7 @@ const PROFILE_FEATURES = [
   "bodyScale",
   "faceToShoulderRatio",
   "pitchProxy",
+  "yawProxy",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {
