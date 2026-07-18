@@ -153,6 +153,31 @@ Stored shape:
 3. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
    `npm run build` passing.
 
+## Status
+
+### Day 1
+
+- Done: profile creation from sample `FrameFeature[]`.
+- Done: single-frame V0 baseline decision.
+- Done: browser IndexedDB save/load draft for profile storage.
+- Done: mock profile baseline demo.
+
+### Day 2
+
+- Done: V0 sustained BAD tracking.
+- Done: alert only after BAD lasts for `sustainedSeconds`.
+- Done: reset sustained timer when posture returns to `STABLE`.
+- Done: Vitest coverage for V0 single-frame behavior and sustained alert
+  behavior.
+
+Remaining Day 2 integration work:
+
+- Run V0 through C's replay evaluator with saved JSON/JSONL feature logs.
+- Use short development-session logs to review whether the current threshold
+  candidates are too strict or too loose.
+- Record known V0 limitations, especially short natural movements and camera
+  changes that V0 cannot distinguish.
+
 ## Day 1 Completion Target
 
 ```text
