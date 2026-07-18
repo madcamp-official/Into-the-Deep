@@ -1,6 +1,7 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { FrameFeature } from "../types";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
+import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 
 // FrameFeature calculation described in plan.md section 8. Coordinates are
 // normalized to shoulder-center origin / shoulder-width scale rather than
@@ -40,12 +41,36 @@ export function toFrameFeature(
       180) /
     Math.PI;
 
-  const confidence = Math.min(nose.visibility, leftShoulder.visibility, rightShoulder.visibility);
+  // MediaPipe fills in every landmark index once a person is detected at
+  // all, even for points that aren't actually visible (hair-covered ears,
+  // a head turned enough that one ear is off to the side, etc.) — so eye/
+  // ear inputs need their own visibility check rather than just a presence
+  // check, same as landmark-reliability's assessLandmarkQuality does for
+  // nose/shoulders. Using the same shared thresholds keeps the two in sync.
+  const eyesReliable =
+    isVisible(leftEye, RELIABILITY_THRESHOLDS.eyeMinConfidence) &&
+    isVisible(rightEye, RELIABILITY_THRESHOLDS.eyeMinConfidence);
+  const earsReliable =
+    isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
+    isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
+
+  const confidence = Math.min(
+    nose.visibility,
+    leftShoulder.visibility,
+    rightShoulder.visibility,
+    ...(leftEye ? [leftEye.visibility] : []),
+    ...(rightEye ? [rightEye.visibility] : []),
+    ...(leftEar ? [leftEar.visibility] : []),
+    ...(rightEar ? [rightEar.visibility] : []),
+  );
   const headXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
   const bodyScale = shoulderWidth;
-  const faceCenterY = leftEye && rightEye ? (leftEye.y + rightEye.y) / 2 : undefined;
+  const faceCenterY =
+    eyesReliable && leftEye && rightEye ? (leftEye.y + rightEye.y) / 2 : undefined;
   const eyeDistance =
-    leftEye && rightEye ? Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y) : undefined;
+    eyesReliable && leftEye && rightEye
+      ? Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y)
+      : undefined;
   const faceToShoulderRatio =
     eyeDistance !== undefined && shoulderWidth > 0 ? eyeDistance / shoulderWidth : undefined;
   const pitchProxy =
@@ -55,7 +80,7 @@ export function toFrameFeature(
   // mirrors camera-profile's yawProxy. Facing the camera straight-on keeps
   // this near 0; turning the head left/right pushes it toward +-1.
   let yawProxy: number | undefined;
-  if (leftEar && rightEar) {
+  if (earsReliable && leftEar && rightEar) {
     const leftDist = Math.abs(nose.x - leftEar.x);
     const rightDist = Math.abs(nose.x - rightEar.x);
     const total = leftDist + rightDist;
@@ -98,4 +123,8 @@ export function toFrameFeature(
     ...(yawProxy !== undefined ? { yawProxy } : {}),
     motionEnergy,
   };
+}
+
+function isVisible(point: NormalizedLandmark | undefined, minConfidence: number): boolean {
+  return point !== undefined && point.visibility >= minConfidence;
 }

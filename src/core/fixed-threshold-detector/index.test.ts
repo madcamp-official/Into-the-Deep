@@ -23,6 +23,8 @@ describe("evaluateV0", () => {
       shoulderXOffset: 0.01,
       shoulderYOffset: 0.01,
       bodyScale: 1.02,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+      pitchProxy: referenceCenters.pitchProxy,
       motionEnergy: 0.03,
     };
 
@@ -43,6 +45,8 @@ describe("evaluateV0", () => {
       shoulderXOffset: 0,
       shoulderYOffset: referenceCenters.shoulderYOffset + DEFAULT_THRESHOLDS.shoulderYOffsetRatio + 0.05,
       bodyScale: 1,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+      pitchProxy: referenceCenters.pitchProxy,
       motionEnergy: 0.1,
     };
 
@@ -63,6 +67,8 @@ describe("evaluateV0", () => {
       shoulderXOffset: referenceCenters.shoulderXOffset + DEFAULT_THRESHOLDS.shoulderXOffsetRatio + 0.05,
       shoulderYOffset: 0,
       bodyScale: 1,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+      pitchProxy: referenceCenters.pitchProxy,
       motionEnergy: 0.1,
     };
 
@@ -133,6 +139,28 @@ describe("evaluateV0", () => {
     expect(event.reason).not.toContain("forwardHead");
   });
 
+  it("marks forwardHead as skipped (not BAD) when faceToShoulderRatio/pitchProxy are unavailable", () => {
+    // Mirrors what feature-normalizer now produces when eyesReliable is
+    // false (e.g. eyes occluded/turned away) — faceToShoulderRatio and
+    // pitchProxy come back undefined rather than a garbage value.
+    const feature: FrameFeature = {
+      timestamp: 7,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale: 1,
+      motionEnergy: 0.1,
+    };
+
+    const event = evaluateV0(feature, referenceCenters);
+
+    expect(event.state).toBe("STABLE");
+    expect(event.alert).toBe(false);
+    expect(event.reason).toEqual(["forwardHead_skipped_low_confidence"]);
+  });
+
   it("flags BAD with yawProxy when the head turns past the threshold", () => {
     const feature: FrameFeature = {
       timestamp: 6,
@@ -142,6 +170,8 @@ describe("evaluateV0", () => {
       shoulderXOffset: 0,
       shoulderYOffset: 0,
       bodyScale: 1,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+      pitchProxy: referenceCenters.pitchProxy,
       yawProxy: referenceCenters.yawProxy + DEFAULT_THRESHOLDS.yawProxyRatio + 0.05,
       motionEnergy: 0.1,
     };
@@ -218,6 +248,8 @@ function createStableFrame(timestamp: number): FrameFeature {
     shoulderXOffset: 0,
     shoulderYOffset: 0,
     bodyScale: 1,
+    faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+    pitchProxy: referenceCenters.pitchProxy,
     motionEnergy: 0.03,
   };
 }

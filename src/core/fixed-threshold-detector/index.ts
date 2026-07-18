@@ -85,8 +85,16 @@ export function evaluateV0(
     reason.push("bodyScale");
   }
 
-  if (isForwardHead(feature, referenceCenters, thresholds)) {
+  const forwardHeadResult = evaluateForwardHead(feature, referenceCenters, thresholds);
+  if (forwardHeadResult === "BAD") {
     reason.push("forwardHead");
+  } else if (forwardHeadResult === "SKIPPED_LOW_CONFIDENCE") {
+    // Not a BAD trigger — faceToShoulderRatio/pitchProxy couldn't be
+    // computed because the eye landmarks weren't reliable enough
+    // (feature-normalizer's eyesReliable gate). Surfaced separately from
+    // "conditions checked but not met" so this doesn't get silently
+    // conflated with a real forwardHead=false in logs/replay analysis.
+    reason.push("forwardHead_skipped_low_confidence");
   }
 
   if (
@@ -100,7 +108,7 @@ export function evaluateV0(
     reason.push("yawProxy");
   }
 
-  const bad = reason.length > 0;
+  const bad = reason.some((entry) => !entry.endsWith("_skipped_low_confidence"));
 
   return {
     timestamp: feature.timestamp,
@@ -110,16 +118,22 @@ export function evaluateV0(
   };
 }
 
-function isForwardHead(
+type ForwardHeadResult = "BAD" | "STABLE" | "SKIPPED_LOW_CONFIDENCE";
+
+function evaluateForwardHead(
   feature: FrameFeature,
   referenceCenters: Record<string, number>,
   thresholds: FixedThresholds,
-): boolean {
-  return (
-    feature.faceToShoulderRatio !== undefined &&
-    feature.pitchProxy !== undefined &&
+): ForwardHeadResult {
+  const { faceToShoulderRatio, pitchProxy } = feature;
+
+  if (faceToShoulderRatio === undefined || pitchProxy === undefined) {
+    return "SKIPPED_LOW_CONFIDENCE";
+  }
+
+  const bad =
     exceedsIncreaseRatio(
-      feature.faceToShoulderRatio,
+      faceToShoulderRatio,
       referenceCenters.faceToShoulderRatio,
       thresholds.forwardHeadFaceRatioIncrease,
     ) &&
@@ -129,11 +143,12 @@ function isForwardHead(
       thresholds.forwardHeadBodyScaleToleranceRatio,
     ) &&
     exceedsPositiveDelta(
-      feature.pitchProxy,
+      pitchProxy,
       referenceCenters.pitchProxy,
       thresholds.forwardHeadPitchDeltaRatio,
-    )
-  );
+    );
+
+  return bad ? "BAD" : "STABLE";
 }
 
 export class FixedThresholdDetector {

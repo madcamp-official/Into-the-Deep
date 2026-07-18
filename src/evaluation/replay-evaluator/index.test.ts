@@ -48,6 +48,8 @@ function createEntry(timestamp: number, shoulderYOffset: number): SessionLogEntr
       shoulderXOffset: 0.5,
       shoulderYOffset,
       bodyScale: 1,
+      faceToShoulderRatio: 0.28,
+      pitchProxy: 0.2,
       motionEnergy: 0.05,
     },
   };
