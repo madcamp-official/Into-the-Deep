@@ -90,6 +90,8 @@ Current behavior:
 - Emits `alert: true` once BAD lasts for at least `sustainedSeconds`.
 - Resets the BAD timer when a stable frame arrives.
 - Provides `reset()` for replay/evaluation sessions.
+- Interprets `FrameFeature.timestamp` as milliseconds, matching
+  `performance.now()` in the browser runtime.
 
 Default sustained threshold:
 

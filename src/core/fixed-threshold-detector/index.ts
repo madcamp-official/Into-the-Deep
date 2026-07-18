@@ -118,11 +118,12 @@ export class FixedThresholdDetector {
       this.badStartedAt = feature.timestamp;
     }
 
-    const sustainedDuration = feature.timestamp - this.badStartedAt;
+    const sustainedDurationSeconds =
+      (feature.timestamp - this.badStartedAt) / 1000;
 
     return {
       ...frameEvent,
-      alert: sustainedDuration >= this.thresholds.sustainedSeconds,
+      alert: sustainedDurationSeconds >= this.thresholds.sustainedSeconds,
     };
   }
 
