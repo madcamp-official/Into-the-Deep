@@ -84,8 +84,8 @@ describe("FixedThresholdDetector", () => {
       reason: ["shoulderYOffset"],
     });
 
-    expect(detector.update(createBadFrame(1.49))).toMatchObject({
-      timestamp: 1.49,
+    expect(detector.update(createBadFrame(1490))).toMatchObject({
+      timestamp: 1490,
       state: "BAD",
       alert: false,
       reason: ["shoulderYOffset"],
@@ -95,10 +95,10 @@ describe("FixedThresholdDetector", () => {
   it("alerts when the BAD state lasts for the sustained threshold", () => {
     const detector = new FixedThresholdDetector(referenceCenters);
 
-    detector.update(createBadFrame(10));
+    detector.update(createBadFrame(10000));
 
-    expect(detector.update(createBadFrame(11.5))).toMatchObject({
-      timestamp: 11.5,
+    expect(detector.update(createBadFrame(11500))).toMatchObject({
+      timestamp: 11500,
       state: "BAD",
       alert: true,
       reason: ["shoulderYOffset"],
@@ -108,17 +108,17 @@ describe("FixedThresholdDetector", () => {
   it("resets the sustained BAD timer when a stable frame arrives", () => {
     const detector = new FixedThresholdDetector(referenceCenters);
 
-    detector.update(createBadFrame(20));
+    detector.update(createBadFrame(20000));
 
-    expect(detector.update(createStableFrame(21))).toEqual({
-      timestamp: 21,
+    expect(detector.update(createStableFrame(21000))).toEqual({
+      timestamp: 21000,
       state: "STABLE",
       alert: false,
       reason: [],
     });
 
-    expect(detector.update(createBadFrame(22))).toMatchObject({
-      timestamp: 22,
+    expect(detector.update(createBadFrame(22000))).toMatchObject({
+      timestamp: 22000,
       state: "BAD",
       alert: false,
       reason: ["shoulderYOffset"],
