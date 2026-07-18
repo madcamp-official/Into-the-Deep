@@ -86,6 +86,51 @@ export function evaluateV0(
   };
 }
 
+export class FixedThresholdDetector {
+  private badStartedAt: number | null = null;
+  private readonly referenceCenters: Record<string, number>;
+  private readonly thresholds: FixedThresholds;
+
+  constructor(
+    referenceCenters: Record<string, number>,
+    thresholds: FixedThresholds = DEFAULT_THRESHOLDS,
+  ) {
+    this.referenceCenters = referenceCenters;
+    this.thresholds = thresholds;
+  }
+
+  update(feature: FrameFeature): DetectionEvent {
+    const frameEvent = evaluateV0(
+      feature,
+      this.referenceCenters,
+      this.thresholds,
+    );
+
+    if (frameEvent.state !== "BAD") {
+      this.reset();
+      return frameEvent;
+    }
+
+    if (
+      this.badStartedAt === null ||
+      feature.timestamp < this.badStartedAt
+    ) {
+      this.badStartedAt = feature.timestamp;
+    }
+
+    const sustainedDuration = feature.timestamp - this.badStartedAt;
+
+    return {
+      ...frameEvent,
+      alert: sustainedDuration >= this.thresholds.sustainedSeconds,
+    };
+  }
+
+  reset(): void {
+    this.badStartedAt = null;
+  }
+}
+
 function exceedsAbsoluteThreshold(
   currentValue: number,
   referenceValue: number | undefined,

@@ -73,8 +73,36 @@ Current behavior:
   threshold.
 - Returns `state: "STABLE"` and `alert: false` when no feature exceeds a
   threshold.
-- Keeps `sustainedSeconds` in the config for V0 completion, but Day 1 currently
-  evaluates a single frame only.
+
+### `FixedThresholdDetector`
+
+File: `src/core/fixed-threshold-detector/index.ts`
+
+This class completes the Day 2 V0 behavior by tracking how long the current
+frame has remained in a BAD candidate state.
+
+Current behavior:
+
+- Uses `evaluateV0` to classify each frame as `STABLE` or `BAD`.
+- Starts a BAD timer when the first BAD frame appears.
+- Keeps `alert: false` while BAD has lasted for less than
+  `sustainedSeconds`.
+- Emits `alert: true` once BAD lasts for at least `sustainedSeconds`.
+- Resets the BAD timer when a stable frame arrives.
+- Provides `reset()` for replay/evaluation sessions.
+
+Default sustained threshold:
+
+```ts
+sustainedSeconds: 1.5
+```
+
+Expected usage:
+
+```ts
+const detector = new FixedThresholdDetector(profile.originalCenters);
+const event = detector.update(frame);
+```
 
 ### Profile baseline demo
 
@@ -120,9 +148,10 @@ Stored shape:
 
 ## Next Work
 
-1. Wire the profile baseline demo into a temporary manual check path or a small
-   automated test.
-2. Keep `npm run lint`, `npm run typecheck`, and `npm run build` passing.
+1. Connect `FixedThresholdDetector` to C's replay evaluator path.
+2. Tune V0 threshold candidates with short development-session logs.
+3. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
+   `npm run build` passing.
 
 ## Day 1 Completion Target
 
