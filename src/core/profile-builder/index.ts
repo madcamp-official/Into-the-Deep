@@ -5,7 +5,8 @@ const MIN_CONFIDENCE = 0.8;
 const PROFILE_FEATURES = [
   "shoulderTilt",
   "headXOffset",
-  "headYOffset",
+  "shoulderXOffset",
+  "shoulderYOffset",
   "bodyScale",
 ] as const satisfies readonly (keyof FrameFeature)[];
 

@@ -3,7 +3,8 @@ export interface FrameFeature {
   confidence: number;
   shoulderTilt: number;
   headXOffset: number;
-  headYOffset: number;
+  shoulderXOffset: number;
+  shoulderYOffset: number;
   bodyScale: number;
   torsoLean?: number;
   motionEnergy: number;
