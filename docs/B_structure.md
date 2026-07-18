@@ -42,6 +42,8 @@ Current behavior:
   - `shoulderXOffset`
   - `shoulderYOffset`
   - `bodyScale`
+  - `faceToShoulderRatio`, when available
+  - `pitchProxy`, when available
 - Stores those averages in `originalCenters`.
 - Initializes `adaptiveCenters` with the same values as `originalCenters`.
 - Initializes `featureDeviations` as `0` for Day 1.
@@ -71,6 +73,8 @@ Current behavior:
   - `shoulderYOffset` (shoulder center height/level drift; replaces the
     former `headYOffset` posture-height signal)
   - `bodyScale`
+  - `forwardHead` (face-to-shoulder ratio increase plus pitch increase,
+    only when body scale remains close to the calibration body scale)
   - `torsoLean`, only when present
 - Returns `state: "BAD"` and `alert: true` if at least one feature exceeds a
   threshold.
@@ -95,6 +99,12 @@ Current behavior:
 - Provides `reset()` for replay/evaluation sessions.
 - Interprets `FrameFeature.timestamp` as milliseconds, matching
   `performance.now()` in the browser runtime.
+- Detects `forwardHead` when face-to-shoulder ratio increases by more than
+  `0.025`, pitch proxy increases by more than `0.01`, and body scale stays
+  within `30%` of the calibration body scale. These values were lowered after
+  an initial manual session where forward-head movement changed
+  `faceToShoulderRatio` from about `0.200` to `0.220` and `pitchProxy` from
+  about `0.170` to `0.200`.
 
 Default sustained threshold:
 

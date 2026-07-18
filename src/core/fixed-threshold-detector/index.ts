@@ -6,6 +6,9 @@ export interface FixedThresholds {
   shoulderXOffsetRatio: number;
   shoulderYOffsetRatio: number;
   bodyScaleIncreaseRatio: number;
+  forwardHeadFaceRatioIncrease: number;
+  forwardHeadBodyScaleToleranceRatio: number;
+  forwardHeadPitchDeltaRatio: number;
   torsoLeanDeg: number;
   sustainedSeconds: number;
 }
@@ -16,6 +19,9 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   shoulderXOffsetRatio: 0.15,
   shoulderYOffsetRatio: 0.18,
   bodyScaleIncreaseRatio: 0.25,
+  forwardHeadFaceRatioIncrease: 0.025,
+  forwardHeadBodyScaleToleranceRatio: 0.3,
+  forwardHeadPitchDeltaRatio: 0.01,
   torsoLeanDeg: 10,
   sustainedSeconds: 1.5,
 };
@@ -77,6 +83,10 @@ export function evaluateV0(
     reason.push("bodyScale");
   }
 
+  if (isForwardHead(feature, referenceCenters, thresholds)) {
+    reason.push("forwardHead");
+  }
+
   if (
     feature.torsoLean !== undefined &&
     exceedsAbsoluteThreshold(
@@ -96,6 +106,32 @@ export function evaluateV0(
     alert: bad,
     reason,
   };
+}
+
+function isForwardHead(
+  feature: FrameFeature,
+  referenceCenters: Record<string, number>,
+  thresholds: FixedThresholds,
+): boolean {
+  return (
+    feature.faceToShoulderRatio !== undefined &&
+    feature.pitchProxy !== undefined &&
+    exceedsIncreaseRatio(
+      feature.faceToShoulderRatio,
+      referenceCenters.faceToShoulderRatio,
+      thresholds.forwardHeadFaceRatioIncrease,
+    ) &&
+    withinRelativeTolerance(
+      feature.bodyScale,
+      referenceCenters.bodyScale,
+      thresholds.forwardHeadBodyScaleToleranceRatio,
+    ) &&
+    exceedsPositiveDelta(
+      feature.pitchProxy,
+      referenceCenters.pitchProxy,
+      thresholds.forwardHeadPitchDeltaRatio,
+    )
+  );
 }
 
 export class FixedThresholdDetector {
@@ -166,4 +202,28 @@ function exceedsIncreaseRatio(
   }
 
   return currentValue > referenceValue * (1 + increaseRatio);
+}
+
+function exceedsPositiveDelta(
+  currentValue: number,
+  referenceValue: number | undefined,
+  threshold: number,
+): boolean {
+  if (referenceValue === undefined) {
+    return false;
+  }
+
+  return currentValue - referenceValue > threshold;
+}
+
+function withinRelativeTolerance(
+  currentValue: number,
+  referenceValue: number | undefined,
+  toleranceRatio: number,
+): boolean {
+  if (referenceValue === undefined || referenceValue <= 0) {
+    return false;
+  }
+
+  return Math.abs(currentValue - referenceValue) / referenceValue <= toleranceRatio;
 }

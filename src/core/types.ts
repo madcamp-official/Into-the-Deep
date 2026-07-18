@@ -6,6 +6,8 @@ export interface FrameFeature {
   shoulderXOffset: number;
   shoulderYOffset: number;
   bodyScale: number;
+  faceToShoulderRatio?: number;
+  pitchProxy?: number;
   torsoLean?: number;
   motionEnergy: number;
 }
