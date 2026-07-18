@@ -8,7 +8,6 @@ export interface FrameFeature {
   bodyScale: number;
   faceToShoulderRatio?: number;
   pitchProxy?: number;
-  torsoLean?: number;
   motionEnergy: number;
 }
 

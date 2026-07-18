@@ -9,7 +9,6 @@ export interface FixedThresholds {
   forwardHeadFaceRatioIncrease: number;
   forwardHeadBodyScaleToleranceRatio: number;
   forwardHeadPitchDeltaRatio: number;
-  torsoLeanDeg: number;
   sustainedSeconds: number;
 }
 
@@ -22,7 +21,6 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   forwardHeadFaceRatioIncrease: 0.025,
   forwardHeadBodyScaleToleranceRatio: 0.3,
   forwardHeadPitchDeltaRatio: 0.01,
-  torsoLeanDeg: 10,
   sustainedSeconds: 1.5,
 };
 
@@ -85,17 +83,6 @@ export function evaluateV0(
 
   if (isForwardHead(feature, referenceCenters, thresholds)) {
     reason.push("forwardHead");
-  }
-
-  if (
-    feature.torsoLean !== undefined &&
-    exceedsAbsoluteThreshold(
-      feature.torsoLean,
-      referenceCenters.torsoLean,
-      thresholds.torsoLeanDeg,
-    )
-  ) {
-    reason.push("torsoLean");
   }
 
   const bad = reason.length > 0;

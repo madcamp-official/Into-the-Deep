@@ -36,7 +36,6 @@ export function createV0Detector(
       bodyScale: entry.features.bodyScale,
       faceToShoulderRatio: entry.features.faceToShoulderRatio,
       pitchProxy: entry.features.pitchProxy,
-      torsoLean: entry.features.torsoLean,
       motionEnergy: entry.features.motionEnergy,
     });
 }

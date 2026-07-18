@@ -19,7 +19,6 @@ export const stableCalibrationFrames: FrameFeature[] = [
     bodyScale: 1,
     faceToShoulderRatio: 0.28,
     pitchProxy: 0.2,
-    torsoLean: 2,
     motionEnergy: 0.04,
   },
   {
@@ -32,7 +31,6 @@ export const stableCalibrationFrames: FrameFeature[] = [
     bodyScale: 1.01,
     faceToShoulderRatio: 0.285,
     pitchProxy: 0.205,
-    torsoLean: 2.2,
     motionEnergy: 0.05,
   },
   {
@@ -59,7 +57,6 @@ export const stableCheckFrame: FrameFeature = {
   bodyScale: 1.005,
   faceToShoulderRatio: 0.282,
   pitchProxy: 0.202,
-  torsoLean: 2.1,
   motionEnergy: 0.04,
 };
 
@@ -73,7 +70,6 @@ export const driftCheckFrame: FrameFeature = {
   bodyScale: 1.33,
   faceToShoulderRatio: 0.36,
   pitchProxy: 0.31,
-  torsoLean: 14,
   motionEnergy: 0.06,
 };
 

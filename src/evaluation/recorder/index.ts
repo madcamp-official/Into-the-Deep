@@ -14,7 +14,6 @@ export interface SessionLogEntry {
     bodyScale: number;
     faceToShoulderRatio?: number;
     pitchProxy?: number;
-    torsoLean?: number;
     motionEnergy: number;
   };
 }
@@ -61,7 +60,6 @@ export class SessionRecorder {
           ? { faceToShoulderRatio: feature.faceToShoulderRatio }
           : {}),
         ...(feature.pitchProxy !== undefined ? { pitchProxy: feature.pitchProxy } : {}),
-        ...(feature.torsoLean !== undefined ? { torsoLean: feature.torsoLean } : {}),
         motionEnergy: feature.motionEnergy,
       },
     });

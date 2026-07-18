@@ -75,7 +75,6 @@ Current behavior:
   - `bodyScale`
   - `forwardHead` (face-to-shoulder ratio increase plus pitch increase,
     only when body scale remains close to the calibration body scale)
-  - `torsoLean`, only when present
 - Returns `state: "BAD"` and `alert: true` if at least one feature exceeds a
   threshold.
 - Returns `state: "STABLE"` and `alert: false` when no feature exceeds a
