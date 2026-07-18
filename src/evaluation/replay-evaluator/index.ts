@@ -2,7 +2,7 @@ import type { DetectionEvent } from "../../core/types";
 import type { SessionLogEntry } from "../recorder";
 import {
   DEFAULT_THRESHOLDS,
-  evaluateV0,
+  FixedThresholdDetector,
   type FixedThresholds,
 } from "../../core/fixed-threshold-detector";
 
@@ -23,19 +23,17 @@ export function createV0Detector(
   referenceCenters: Record<string, number>,
   thresholds: FixedThresholds = DEFAULT_THRESHOLDS,
 ): Detector {
+  const detector = new FixedThresholdDetector(referenceCenters, thresholds);
+
   return (entry) =>
-    evaluateV0(
-      {
-        timestamp: entry.timestamp,
-        confidence: entry.confidence,
-        shoulderTilt: entry.features.shoulderTilt,
-        headXOffset: entry.features.headXOffset,
-        headYOffset: entry.features.headYOffset,
-        bodyScale: entry.features.bodyScale,
-        torsoLean: entry.features.torsoLean,
-        motionEnergy: entry.features.motionEnergy,
-      },
-      referenceCenters,
-      thresholds,
-    );
+    detector.update({
+      timestamp: entry.timestamp,
+      confidence: entry.confidence,
+      shoulderTilt: entry.features.shoulderTilt,
+      headXOffset: entry.features.headXOffset,
+      headYOffset: entry.features.headYOffset,
+      bodyScale: entry.features.bodyScale,
+      torsoLean: entry.features.torsoLean,
+      motionEnergy: entry.features.motionEnergy,
+    });
 }

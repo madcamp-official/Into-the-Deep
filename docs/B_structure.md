@@ -150,8 +150,8 @@ Stored shape:
 
 ## Next Work
 
-1. Connect `FixedThresholdDetector` to C's replay evaluator path.
-2. Tune V0 threshold candidates with short development-session logs.
+1. Tune V0 threshold candidates with short development-session logs.
+2. Record V0 limitations found during manual camera sessions and replay.
 3. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
    `npm run build` passing.
 
@@ -171,10 +171,11 @@ Stored shape:
 - Done: reset sustained timer when posture returns to `STABLE`.
 - Done: Vitest coverage for V0 single-frame behavior and sustained alert
   behavior.
+- Done: replay evaluator V0 path uses `FixedThresholdDetector`, so stored
+  JSONL replay follows the same sustained alert timing as the live app.
 
 Remaining Day 2 integration work:
 
-- Run V0 through C's replay evaluator with saved JSON/JSONL feature logs.
 - Use short development-session logs to review whether the current threshold
   candidates are too strict or too loose.
 - Record known V0 limitations, especially short natural movements and camera
