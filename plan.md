@@ -574,25 +574,62 @@ MVP는 하나의 기기와 하나의 Chrome 브라우저 환경을 기준으로 
 
 ### IndexedDB 저장 항목
 
+IndexedDB에는 앱을 껐다 켜도 유지되어야 하는 사용자별 기준값과 설정을 저장한다.
+
 - Original Reference Profile
+    - 처음 calibration 때 사용자가 등록한 기준 자세이다.
+    - `originalCenters`, `featureDeviations`, `validFrameCount`, `calibrationDuration` 등을 포함한다.
+    - adaptive profile이 잘못된 방향으로 계속 이동하지 않도록 기준점 역할을 한다.
 - Adaptive Profile
+    - 실제 drift score 계산에 사용하는 조정 가능한 기준 자세이다.
+    - 처음에는 Original Reference Profile과 동일하게 시작한다.
+    - 사용자가 교정 후 확인한 자세만 작은 비율로 반영한다.
 - Camera Profile
+    - calibration 당시의 카메라 환경 기준값이다.
+    - 예: shoulder width, face center, shoulder center, face-to-shoulder ratio, yaw/pitch proxy.
+    - 현재 변화가 자세 변화인지 카메라 위치 변화인지 구분하는 데 사용한다.
 - Calibration guideline
+    - 처음 기준 자세의 skeleton 또는 guideline 표시용 데이터이다.
+    - alert 또는 drift 상태에서 현재 skeleton과 기준 skeleton을 비교해 보여줄 때 사용한다.
 - 사용자 설정
+    - 알림 민감도, guideline 표시 여부, 로그 기록 여부 같은 앱 설정이다.
+    - MVP에서는 최소 설정만 저장하거나 비워둘 수 있다.
 - 마지막 calibration 시간
+    - 마지막으로 기준 자세와 camera profile을 등록한 시각이다.
+    - profile이 오래되었는지 판단하거나 사용자에게 recalibration을 안내할 때 사용한다.
 
 ### JSON 또는 JSONL 저장 항목
 
+JSON/JSONL은 profile 저장용이 아니라 평가와 replay를 위한 로그이다. 동일한 입력 로그를 V0, V1, V2에 다시 넣어 성능을 비교할 수 있어야 한다.
+
 - timestamp
+    - 해당 frame 또는 event가 발생한 시간이다.
 - ground-truth label
+    - 사람이 직접 붙인 정답 라벨이다.
+    - 예: `NORMAL_WORK`, `FORWARD_LEAN`, `LEFT_LEAN`, `RIGHT_LEAN`, `CLOSE_TO_CAMERA`, `CAMERA_CHANGE`.
 - landmark confidence
+    - MediaPipe landmark를 얼마나 신뢰할 수 있는지 나타내는 값이다.
+    - 낮은 경우 자세 이상이 아니라 `UNKNOWN` 또는 판정 보류로 처리한다.
 - 주요 landmark
+    - feature 계산에 필요한 핵심 landmark 좌표이다.
+    - 예: 코, 눈, 귀, 양쪽 어깨, 양쪽 골반.
 - posture features
+    - landmark에서 계산한 자세 특징값이다.
+    - 예: `shoulderTilt`, `headXOffset`, `headYOffset`, `bodyScale`, `torsoLean`, `motionEnergy`.
 - camera state
+    - 현재 카메라 환경 판정 결과이다.
+    - `VALID`, `ADJUSTED`, `RECALIBRATION_REQUIRED` 중 하나를 기록한다.
 - drift score
+    - 현재 자세가 개인 기준 자세에서 얼마나 벗어났는지 나타내는 점수이다.
+    - V1/V2 비교와 threshold 조정에 사용한다.
 - state
+    - temporal state machine의 현재 상태이다.
+    - 예: `STABLE`, `MOVING`, `DRIFT_SUSPECTED`, `ALERTED`, `UNKNOWN`.
 - alert 여부
+    - 해당 시점에 실제 사용자 경고를 발생시켰는지 여부이다.
 - dominant features
+    - drift 판단에 가장 크게 영향을 준 feature 목록이다.
+    - 예: `["headYOffset", "bodyScale"]`.
 
 ### 저장하지 않는 데이터
 
