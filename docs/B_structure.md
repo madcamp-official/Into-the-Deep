@@ -39,7 +39,8 @@ Current behavior:
 - Calculates average centers for:
   - `shoulderTilt`
   - `headXOffset`
-  - `headYOffset`
+  - `shoulderXOffset`
+  - `shoulderYOffset`
   - `bodyScale`
 - Stores those averages in `originalCenters`.
 - Initializes `adaptiveCenters` with the same values as `originalCenters`.
@@ -66,7 +67,9 @@ Current behavior:
 - Adds a reason when a feature exceeds its threshold:
   - `shoulderTilt`
   - `headXOffset`
-  - `headYOffset`
+  - `shoulderXOffset` (shoulder center left-right drift)
+  - `shoulderYOffset` (shoulder center height/level drift; replaces the
+    former `headYOffset` posture-height signal)
   - `bodyScale`
   - `torsoLean`, only when present
 - Returns `state: "BAD"` and `alert: true` if at least one feature exceeds a

@@ -7,17 +7,18 @@ import type { DetectionEvent, ScenarioLabel } from "../core/types";
 // from disk) since this module also needs to run in the browser; update
 // both together until a shared asset loader exists.
 const SAMPLE_SESSION_JSONL = [
-  '{"timestamp":0,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.96,"features":{"shoulderTilt":1.4,"headXOffset":0.02,"headYOffset":0.01,"bodyScale":1.00,"motionEnergy":0.05}}',
-  '{"timestamp":1000,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.95,"features":{"shoulderTilt":1.6,"headXOffset":0.03,"headYOffset":0.02,"bodyScale":1.01,"motionEnergy":0.06}}',
-  '{"timestamp":31420,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.94,"features":{"shoulderTilt":2.1,"headXOffset":0.06,"headYOffset":0.93,"bodyScale":1.04,"motionEnergy":0.12}}',
-  '{"timestamp":45000,"groundTruth":"FORWARD_LEAN","cameraState":"VALID","confidence":0.93,"features":{"shoulderTilt":3.2,"headXOffset":0.05,"headYOffset":0.30,"bodyScale":1.10,"motionEnergy":0.08}}',
-  '{"timestamp":60000,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.95,"features":{"shoulderTilt":1.5,"headXOffset":0.02,"headYOffset":0.01,"bodyScale":1.00,"motionEnergy":0.04}}',
+  '{"timestamp":0,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.96,"features":{"shoulderTilt":1.4,"headXOffset":0.02,"shoulderXOffset":0.50,"shoulderYOffset":0.40,"bodyScale":1.00,"motionEnergy":0.05}}',
+  '{"timestamp":1000,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.95,"features":{"shoulderTilt":1.6,"headXOffset":0.03,"shoulderXOffset":0.51,"shoulderYOffset":0.41,"bodyScale":1.01,"motionEnergy":0.06}}',
+  '{"timestamp":31420,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.94,"features":{"shoulderTilt":2.1,"headXOffset":0.06,"shoulderXOffset":0.52,"shoulderYOffset":0.43,"bodyScale":1.04,"motionEnergy":0.12}}',
+  '{"timestamp":45000,"groundTruth":"FORWARD_LEAN","cameraState":"VALID","confidence":0.93,"features":{"shoulderTilt":3.2,"headXOffset":0.05,"shoulderXOffset":0.53,"shoulderYOffset":0.60,"bodyScale":1.10,"motionEnergy":0.08}}',
+  '{"timestamp":60000,"groundTruth":"NORMAL_WORK","cameraState":"VALID","confidence":0.95,"features":{"shoulderTilt":1.5,"headXOffset":0.02,"shoulderXOffset":0.50,"shoulderYOffset":0.40,"bodyScale":1.00,"motionEnergy":0.04}}',
 ].join("\n");
 
 const SAMPLE_REFERENCE_CENTERS: Record<string, number> = {
   shoulderTilt: 1.5,
   headXOffset: 0.02,
-  headYOffset: 0.01,
+  shoulderXOffset: 0.50,
+  shoulderYOffset: 0.40,
   bodyScale: 1.0,
 };
 

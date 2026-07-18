@@ -9,7 +9,8 @@ export interface SessionLogEntry {
   features: {
     shoulderTilt: number;
     headXOffset: number;
-    headYOffset: number;
+    shoulderXOffset: number;
+    shoulderYOffset: number;
     bodyScale: number;
     motionEnergy: number;
     torsoLean?: number;
@@ -51,7 +52,8 @@ export class SessionRecorder {
       features: {
         shoulderTilt: feature.shoulderTilt,
         headXOffset: feature.headXOffset,
-        headYOffset: feature.headYOffset,
+        shoulderXOffset: feature.shoulderXOffset,
+        shoulderYOffset: feature.shoulderYOffset,
         bodyScale: feature.bodyScale,
         motionEnergy: feature.motionEnergy,
         ...(feature.torsoLean !== undefined ? { torsoLean: feature.torsoLean } : {}),
