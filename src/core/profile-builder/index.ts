@@ -29,12 +29,12 @@ export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile
       continue;
     }
 
-    const average =
-      values.reduce((sum, value) => sum + value, 0) /
-      values.length;
+    const center = median(values);
 
-    originalCenters[feature] = average;
-    featureDeviations[feature] = 0;
+    originalCenters[feature] = center;
+    featureDeviations[feature] = median(
+      values.map((value) => Math.abs(value - center)),
+    );
   }
 
   return {
@@ -44,6 +44,15 @@ export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile
     calibrationDuration: getCalibrationDuration(validFrames),
     validFrameCount: validFrames.length,
   };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
 }
 
 function getCalibrationDuration(validFrames: FrameFeature[]): number {

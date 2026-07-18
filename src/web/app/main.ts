@@ -5,6 +5,10 @@ import { toFrameFeature } from "../../core/feature-normalizer";
 import { assessLandmarkQuality } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
 import { FixedThresholdDetector } from "../../core/fixed-threshold-detector";
+import {
+  PersonalizedDriftDetector,
+  type PersonalizedDetectionResult,
+} from "../../core/personalized-detector";
 import { SessionRecorder, toJSONL } from "../../evaluation/recorder";
 import type { DetectionEvent, FrameFeature, UserProfile } from "../../core/types";
 
@@ -27,8 +31,16 @@ async function main() {
   const canvas = document.createElement("canvas");
   canvas.width = 1280;
   canvas.height = 720;
+  canvas.className = "camera-canvas";
+
+  const layout = document.createElement("main");
+  layout.className = "app-layout";
+
+  const sidePanel = document.createElement("aside");
+  sidePanel.className = "side-panel";
 
   const controls = document.createElement("div");
+  controls.className = "controls";
   const calibrateButton = document.createElement("button");
   calibrateButton.textContent = "Calibration";
   const updateBaselineButton = document.createElement("button");
@@ -42,9 +54,12 @@ async function main() {
   controls.append(calibrateButton, updateBaselineButton, recordButton, downloadButton);
 
   const status = document.createElement("pre");
-  status.style.font = "12px monospace";
+  status.className = "status";
 
-  app.append(video, canvas, controls, status);
+  sidePanel.append(controls, status);
+  layout.append(canvas, sidePanel);
+  app.append(video, layout);
+  addLayoutStyles();
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -60,6 +75,7 @@ async function main() {
   let previousFeature: FrameFeature | null = null;
   let profile: UserProfile | null = null;
   let detector: FixedThresholdDetector | null = null;
+  let v1Detector: PersonalizedDriftDetector | null = null;
   let calibrationFrames: FrameFeature[] | null = null;
   let calibrationDeadline = 0;
   let lastSessionLog = "";
@@ -76,6 +92,7 @@ async function main() {
   function finishCalibration(frames: FrameFeature[]) {
     profile = buildUserProfile(frames);
     detector = new FixedThresholdDetector(profile.originalCenters);
+    v1Detector = new PersonalizedDriftDetector(profile);
     calibrateButton.disabled = false;
     updateBaselineButton.disabled = false;
     recordButton.disabled = false;
@@ -143,8 +160,10 @@ async function main() {
     }
 
     let event: DetectionEvent | null = null;
+    let v1Result: PersonalizedDetectionResult | null = null;
     if (detector) {
       event = detector.update(feature);
+      v1Result = v1Detector?.update(feature) ?? null;
       if (recorder.isRecording()) {
         recorder.record(feature, "NORMAL_WORK", "UNKNOWN");
       }
@@ -166,6 +185,12 @@ async function main() {
       event ? `state: ${event.state}` : "state: (calibrate first)",
       event ? `alert: ${event.alert}` : "",
       event && event.reason.length > 0 ? `reason: ${event.reason.join(", ")}` : "",
+      v1Result ? `v1 drift score: ${v1Result.observation.driftScore.toFixed(2)}` : "",
+      v1Result ? `v1 state: ${v1Result.event.state}` : "",
+      v1Result ? `v1 alert: ${v1Result.event.alert}` : "",
+      v1Result && v1Result.observation.dominantFeatures.length > 0
+        ? `v1 dominant: ${v1Result.observation.dominantFeatures.join(", ")}`
+        : "",
     ]
       .filter((line) => line.length > 0)
       .join("\n");
@@ -199,6 +224,77 @@ function getRatioDeltaLine(
 
   const deltaRatio = (currentValue - referenceValue) / referenceValue;
   return `${label}: ${(deltaRatio * 100).toFixed(1)}%`;
+}
+
+function addLayoutStyles(): void {
+  const style = document.createElement("style");
+  style.textContent = `
+    #app {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .app-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .camera-canvas {
+      display: block;
+      flex: 1 1 640px;
+      width: min(100%, 1000px);
+      height: auto;
+      aspect-ratio: 16 / 9;
+      background: #111827;
+    }
+
+    .side-panel {
+      flex: 0 1 340px;
+      min-width: 280px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .controls button {
+      min-height: 36px;
+    }
+
+    .status {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 280px;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      font: 12px/1.5 monospace;
+      background: #f3f4f6;
+    }
+
+    @media (max-width: 900px) {
+      #app {
+        padding: 16px;
+      }
+
+      .app-layout {
+        flex-direction: column;
+      }
+
+      .camera-canvas,
+      .side-panel {
+        width: 100%;
+        min-width: 0;
+      }
+    }
+  `;
+  document.head.append(style);
 }
 
 main().catch((error) => {

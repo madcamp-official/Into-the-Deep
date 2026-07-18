@@ -20,6 +20,7 @@ FrameFeature[]
 ```text
 src/core/profile-builder/index.ts
 src/core/fixed-threshold-detector/index.ts
+src/core/personalized-detector/index.ts
 src/web/indexeddb-storage/index.ts
 src/core/types.ts
 ```
@@ -30,13 +31,13 @@ src/core/types.ts
 
 File: `src/core/profile-builder/index.ts`
 
-This function builds a Day 1 calibration profile from mock or real
+This function builds a calibration profile from mock or real
 `FrameFeature[]` input.
 
 Current behavior:
 
 - Uses only frames with `confidence >= 0.8`.
-- Calculates average centers for:
+- Calculates median centers and median absolute deviations (MAD) for:
   - `shoulderTilt`
   - `headXOffset`
   - `shoulderXOffset`
@@ -47,7 +48,7 @@ Current behavior:
   - `yawProxy`, when available
 - Stores those averages in `originalCenters`.
 - Initializes `adaptiveCenters` with the same values as `originalCenters`.
-- Initializes `featureDeviations` as `0` for Day 1.
+- Stores MAD values in `featureDeviations`.
 - Records `calibrationDuration` and `validFrameCount`.
 
 Meaning of profile fields:
@@ -165,9 +166,11 @@ Stored shape:
 
 ## Next Work
 
-1. Tune V0 threshold candidates with short development-session logs.
-2. Record V0 limitations found during manual camera sessions and replay.
-3. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
+1. Tune V1's initial drift-score threshold using short development-session
+   logs.
+2. Create and store a calibration `CameraProfile`.
+3. Record V0/V1 limitations found during manual camera sessions and replay.
+4. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
    `npm run build` passing.
 
 ## Status
@@ -188,6 +191,35 @@ Stored shape:
   behavior.
 - Done: replay evaluator V0 path uses `FixedThresholdDetector`, so stored
   JSONL replay follows the same sustained alert timing as the live app.
+
+### Day 3
+
+- Done: calibration centers now use the median instead of the mean.
+- Done: `featureDeviations` stores per-feature MAD values.
+- Done: V1 uses personalized normalized deviations for `shoulderTilt`,
+  `headXOffset`, `shoulderXOffset`, `shoulderYOffset`,
+  `faceToShoulderRatio`, `pitchProxy`, and `yawProxy`.
+- Done: V1 drift score is the average of the two largest feature deviations.
+- Done: V1 uses an initial score threshold of `3.0` and requires it to last
+  for `1.5` seconds before alerting.
+- Done: `bodyScale` is excluded from the V1 posture score until camera
+  assessment is implemented.
+- Done: adaptive profile updates remain disabled; the profile is only read
+  by V1 and is not changed automatically.
+
+### `PersonalizedDriftDetector`
+
+File: `src/core/personalized-detector/index.ts`
+
+V1 compares each current feature with the user's adaptive center and divides
+the absolute difference by that feature's MAD. The two largest normalized
+differences are averaged as the `driftScore`, while their names become
+`dominantFeatures`. Small per-feature minimum deviation floors prevent a
+near-zero MAD from making normal landmark noise look like a large drift.
+
+`yawProxy` is included as a candidate feature. It represents a sustained
+head turn away from the calibration-facing direction; its usefulness and
+false-alert rate should be checked with short development sessions.
 
 Remaining Day 2 integration work:
 
