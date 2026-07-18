@@ -40,14 +40,18 @@ export function toFrameFeature(
   const headXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
   const bodyScale = shoulderWidth;
 
-  // Raw (frame-normalized) shoulder-center position rather than an offset
-  // from another landmark: there's nothing else to measure the shoulders
-  // against, so drift is judged directly against the calibrated reference
-  // center in evaluateV0. shoulderXOffset tracks sideways shifting (e.g.
-  // sliding sideways in a chair); shoulderYOffset tracks shoulders
-  // rising/dropping and replaces headYOffset as the posture-height signal.
-  const shoulderXOffset = shoulderCenterX;
-  const shoulderYOffset = shoulderCenterY;
+  // Shoulder-center position scaled by shoulder width, same convention as
+  // headXOffset. Raw frame-normalized position would confound camera
+  // distance with real movement (moving closer shrinks apparent drift,
+  // moving away exaggerates it); dividing by shoulderWidth cancels that out
+  // since both scale together with distance-to-camera. There's no other
+  // landmark to take an "offset" from, so drift is judged directly against
+  // the calibrated reference center in evaluateV0. shoulderXOffset tracks
+  // sideways shifting (e.g. sliding sideways in a chair); shoulderYOffset
+  // tracks shoulders rising/dropping and replaces headYOffset as the
+  // posture-height signal.
+  const shoulderXOffset = shoulderWidth > 0 ? shoulderCenterX / shoulderWidth : 0;
+  const shoulderYOffset = shoulderWidth > 0 ? shoulderCenterY / shoulderWidth : 0;
 
   const motionEnergy = previous
     ? Math.hypot(
