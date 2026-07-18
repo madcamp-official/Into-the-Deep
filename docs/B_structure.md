@@ -71,7 +71,6 @@ Current behavior:
   - `shoulderYOffset` (shoulder center height/level drift; replaces the
     former `headYOffset` posture-height signal)
   - `bodyScale`
-  - `torsoLean`, only when present
 - Returns `state: "BAD"` and `alert: true` if at least one feature exceeds a
   threshold.
 - Returns `state: "STABLE"` and `alert: false` when no feature exceeds a

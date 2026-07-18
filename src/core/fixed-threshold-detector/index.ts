@@ -6,7 +6,6 @@ export interface FixedThresholds {
   shoulderXOffsetRatio: number;
   shoulderYOffsetRatio: number;
   bodyScaleIncreaseRatio: number;
-  torsoLeanDeg: number;
   sustainedSeconds: number;
 }
 
@@ -16,7 +15,6 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   shoulderXOffsetRatio: 0.15,
   shoulderYOffsetRatio: 0.18,
   bodyScaleIncreaseRatio: 0.25,
-  torsoLeanDeg: 10,
   sustainedSeconds: 1.5,
 };
 
@@ -75,17 +73,6 @@ export function evaluateV0(
     )
   ) {
     reason.push("bodyScale");
-  }
-
-  if (
-    feature.torsoLean !== undefined &&
-    exceedsAbsoluteThreshold(
-      feature.torsoLean,
-      referenceCenters.torsoLean,
-      thresholds.torsoLeanDeg,
-    )
-  ) {
-    reason.push("torsoLean");
   }
 
   const bad = reason.length > 0;

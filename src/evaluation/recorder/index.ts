@@ -13,7 +13,6 @@ export interface SessionLogEntry {
     shoulderYOffset: number;
     bodyScale: number;
     motionEnergy: number;
-    torsoLean?: number;
   };
 }
 
@@ -56,7 +55,6 @@ export class SessionRecorder {
         shoulderYOffset: feature.shoulderYOffset,
         bodyScale: feature.bodyScale,
         motionEnergy: feature.motionEnergy,
-        ...(feature.torsoLean !== undefined ? { torsoLean: feature.torsoLean } : {}),
       },
     });
   }

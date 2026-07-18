@@ -34,7 +34,6 @@ export function createV0Detector(
       shoulderXOffset: entry.features.shoulderXOffset,
       shoulderYOffset: entry.features.shoulderYOffset,
       bodyScale: entry.features.bodyScale,
-      torsoLean: entry.features.torsoLean,
       motionEnergy: entry.features.motionEnergy,
     });
 }
