@@ -269,7 +269,7 @@ async function main() {
       v1Result ? `v1 drift score: ${v1Result.observation.driftScore.toFixed(2)}` : "",
       v1Result ? `v1 state: ${v1Result.event.state}` : "",
       v1Result ? `v1 alert: ${v1Result.event.alert}` : "",
-      v1Result && v1Result.observation.dominantFeatures.length > 0
+      v1Result && v1Result.event.state === "BAD" && v1Result.observation.dominantFeatures.length > 0
         ? `v1 dominant: ${v1Result.observation.dominantFeatures.join(", ")}`
         : "",
     ]
