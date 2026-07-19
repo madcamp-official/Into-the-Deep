@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { labelsFromEntries, SessionRecorder } from "./index";
-import type { FrameFeature } from "../../core/types";
+import type { CameraProfile, FrameFeature, UserProfile } from "../../core/types";
 
 describe("SessionRecorder development markers", () => {
   it("keeps scenario markers and the active ground-truth label in JSON entries", () => {
@@ -38,6 +38,29 @@ describe("SessionRecorder development markers", () => {
       { timestamp: 1000, label: "NORMAL_WORK" },
     ]);
   });
+
+  it("stores the calibration snapshot in the first JSONL entry", () => {
+    const recorder = new SessionRecorder();
+    const userProfile = createUserProfile();
+    const cameraProfile = createCameraProfile();
+
+    recorder.start({
+      userProfile,
+      cameraProfile,
+      profileCreatedAt: 1234,
+    });
+    recorder.record(createFeature(10), "NORMAL_WORK", "UNKNOWN");
+    recorder.record(createFeature(20), "NORMAL_WORK", "UNKNOWN");
+
+    const entries = recorder.stop();
+
+    expect(entries[0].metadata).toEqual({
+      userProfile,
+      cameraProfile,
+      profileCreatedAt: 1234,
+    });
+    expect(entries[1].metadata).toBeUndefined();
+  });
 });
 
 function createFeature(timestamp: number): FrameFeature {
@@ -50,5 +73,28 @@ function createFeature(timestamp: number): FrameFeature {
     shoulderYOffset: 0,
     bodyScale: 1,
     motionEnergy: 0,
+  };
+}
+
+function createUserProfile(): UserProfile {
+  return {
+    originalCenters: { shoulderTilt: 0 },
+    adaptiveCenters: { shoulderTilt: 0 },
+    featureDeviations: { shoulderTilt: 0.1 },
+    calibrationDuration: 3000,
+    validFrameCount: 30,
+  };
+}
+
+function createCameraProfile(): CameraProfile {
+  return {
+    shoulderWidth: 0.4,
+    faceCenterX: 0.5,
+    faceCenterY: 0.3,
+    shoulderCenterX: 0.5,
+    shoulderCenterY: 0.6,
+    faceToShoulderRatio: 0.2,
+    yawProxy: 0,
+    pitchProxy: 0.17,
   };
 }

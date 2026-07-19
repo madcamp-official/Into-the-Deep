@@ -125,6 +125,7 @@ async function main() {
   let previousFeature: FrameFeature | null = null;
   let profile: UserProfile | null = null;
   let cameraProfile: CameraProfile | null = null;
+  let profileCreatedAt: number | null = null;
   let detector: FixedThresholdDetector | null = null;
   let v1Detector: PersonalizedDriftDetector | null = null;
   let calibrationFrames: FrameFeature[] | null = null;
@@ -142,6 +143,7 @@ async function main() {
     const storedProfiles = await loadProfiles();
     if (storedProfiles) {
       activateProfile(storedProfiles.userProfile, storedProfiles.cameraProfile);
+      profileCreatedAt = storedProfiles.lastCalibrationAt;
       calibrationMessage = "saved profile restored";
     }
   } catch (error) {
@@ -175,11 +177,13 @@ async function main() {
       }
 
       activateProfile(nextProfile, nextCameraProfile);
+      const createdAt = Date.now();
       await saveProfiles({
         userProfile: nextProfile,
         cameraProfile: nextCameraProfile,
-        lastCalibrationAt: Date.now(),
+        lastCalibrationAt: createdAt,
       });
+      profileCreatedAt = createdAt;
       calibrationMessage = "profile saved";
     } catch (error) {
       calibrationMessage = `profile save failed: ${String(error)}`;
@@ -205,7 +209,15 @@ async function main() {
 
   recordButton.onclick = () => {
     if (!recorder.isRecording()) {
-      recorder.start();
+      recorder.start(
+        profile && cameraProfile && profileCreatedAt !== null
+          ? {
+              userProfile: profile,
+              cameraProfile,
+              profileCreatedAt,
+            }
+          : undefined,
+      );
       scenarioLabeler.reset(performance.now());
       scenarioActive = false;
       recordButton.textContent = "측정 종료";

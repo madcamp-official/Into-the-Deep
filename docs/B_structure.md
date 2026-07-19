@@ -222,6 +222,10 @@ Stored shape:
   `CAMERA_CHANGE` labels.
 - Done: development-session JSONL entries preserve scenario start, drift
   onset, and scenario end markers.
+- Done: a session stores the `UserProfile`, `CameraProfile`, and profile
+  creation timestamp in metadata on its first JSONL frame.
+- Done: replay helpers can create V0/V1 detectors directly from that session
+  metadata without manually supplying the calibration profile.
 
 ### `PersonalizedDriftDetector`
 

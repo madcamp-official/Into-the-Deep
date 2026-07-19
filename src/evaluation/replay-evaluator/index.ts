@@ -1,5 +1,5 @@
 import type { DetectionEvent, FrameFeature, UserProfile } from "../../core/types";
-import type { SessionLogEntry } from "../recorder";
+import { getSessionMetadata, type SessionLogEntry } from "../recorder";
 import {
   DEFAULT_THRESHOLDS,
   FixedThresholdDetector,
@@ -59,4 +59,28 @@ export function createV1Detector(
   const detector = new PersonalizedDriftDetector(profile, thresholds);
 
   return (entry) => detector.update(toFrameFeature(entry)).event;
+}
+
+export function createV0DetectorFromSession(
+  entries: readonly SessionLogEntry[],
+  thresholds: FixedThresholds = DEFAULT_THRESHOLDS,
+): Detector {
+  const metadata = getSessionMetadata(entries);
+  if (!metadata) {
+    throw new Error("Session metadata is required to replay V0");
+  }
+
+  return createV0Detector(metadata.userProfile.originalCenters, thresholds);
+}
+
+export function createV1DetectorFromSession(
+  entries: readonly SessionLogEntry[],
+  thresholds: PersonalizedThresholds = DEFAULT_PERSONALIZED_THRESHOLDS,
+): Detector {
+  const metadata = getSessionMetadata(entries);
+  if (!metadata) {
+    throw new Error("Session metadata is required to replay V1");
+  }
+
+  return createV1Detector(metadata.userProfile, thresholds);
 }
