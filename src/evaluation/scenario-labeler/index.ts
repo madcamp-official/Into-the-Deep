@@ -22,6 +22,11 @@ export class ScenarioLabeler {
     this.labels.push({ timestamp, label });
   }
 
+  reset(timestamp: number): void {
+    this.labels = [{ timestamp, label: "NORMAL_WORK" }];
+    this.current = "NORMAL_WORK";
+  }
+
   getCurrentLabel(): ScenarioLabel["label"] {
     return this.current;
   }

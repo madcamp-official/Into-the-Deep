@@ -13,13 +13,18 @@ import {
   PersonalizedDriftDetector,
   type PersonalizedDetectionResult,
 } from "../../core/personalized-detector";
-import { SessionRecorder, toJSONL } from "../../evaluation/recorder";
+import {
+  SessionRecorder,
+  toJSONL,
+} from "../../evaluation/recorder";
+import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import type {
   CameraProfile,
   CameraRawFeature,
   DetectionEvent,
   FrameFeature,
+  ScenarioLabel,
   UserProfile,
 } from "../../core/types";
 
@@ -63,7 +68,40 @@ async function main() {
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
-  controls.append(calibrateButton, updateBaselineButton, recordButton, downloadButton);
+  const scenarioSelect = document.createElement("select");
+  scenarioSelect.className = "scenario-select";
+  const scenarios: Array<{ value: ScenarioLabel["label"]; text: string }> = [
+    { value: "NORMAL_WORK", text: "Normal work" },
+    { value: "TRANSIENT_ACTION", text: "Transient action" },
+    { value: "FORWARD_LEAN", text: "Forward lean" },
+    { value: "FORWARD_HEAD", text: "Forward head / turtle neck" },
+    { value: "LEFT_LEAN", text: "Left lean" },
+    { value: "RIGHT_LEAN", text: "Right lean" },
+    { value: "SIDE_SHIFT", text: "Side shift" },
+    { value: "HEAD_TURN", text: "Head turn" },
+    { value: "CLOSE_TO_CAMERA", text: "Close to camera" },
+    { value: "CAMERA_CHANGE", text: "Camera change" },
+  ];
+  for (const scenario of scenarios) {
+    const option = document.createElement("option");
+    option.value = scenario.value;
+    option.textContent = scenario.text;
+    scenarioSelect.append(option);
+  }
+
+  const scenarioStartedButton = createMarkerButton("Scenario started", true);
+  const driftOnsetButton = createMarkerButton("Drift onset", true);
+  const scenarioEndedButton = createMarkerButton("Scenario ended", true);
+  controls.append(
+    calibrateButton,
+    updateBaselineButton,
+    recordButton,
+    downloadButton,
+    scenarioSelect,
+    scenarioStartedButton,
+    driftOnsetButton,
+    scenarioEndedButton,
+  );
 
   const status = document.createElement("pre");
   status.className = "status";
@@ -94,8 +132,11 @@ async function main() {
   let calibrationDeadline = 0;
   let calibrationMessage = "";
   let lastSessionLog = "";
+  let selectedScenario: ScenarioLabel["label"] = "NORMAL_WORK";
+  let scenarioActive = false;
 
   const recorder = new SessionRecorder();
+  const scenarioLabeler = new ScenarioLabeler();
 
   try {
     const storedProfiles = await loadProfiles();
@@ -165,15 +206,81 @@ async function main() {
   recordButton.onclick = () => {
     if (!recorder.isRecording()) {
       recorder.start();
+      scenarioLabeler.reset(performance.now());
+      scenarioActive = false;
       recordButton.textContent = "측정 종료";
       downloadButton.disabled = true;
+      scenarioStartedButton.disabled = false;
+      scenarioEndedButton.disabled = false;
     } else {
+      endScenario();
       const entries = recorder.stop();
       recordButton.textContent = "측정 시작";
       lastSessionLog = toJSONL(entries);
       downloadButton.disabled = entries.length === 0;
+      scenarioStartedButton.disabled = true;
+      driftOnsetButton.disabled = true;
+      scenarioEndedButton.disabled = true;
     }
   };
+
+  scenarioSelect.onchange = () => {
+    selectedScenario = scenarioSelect.value as ScenarioLabel["label"];
+    driftOnsetButton.disabled =
+      !recorder.isRecording() || !isDriftScenario(selectedScenario);
+  };
+
+  scenarioStartedButton.onclick = () => {
+    if (!recorder.isRecording() || scenarioActive) return;
+
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(
+      timestamp,
+      isDriftScenario(selectedScenario) ? "SETTLING" : selectedScenario,
+    );
+    recorder.mark({
+      timestamp,
+      type: "SCENARIO_STARTED",
+      label: selectedScenario,
+    });
+    scenarioActive = true;
+    driftOnsetButton.disabled = !isDriftScenario(selectedScenario);
+  };
+
+  driftOnsetButton.onclick = () => {
+    if (
+      !recorder.isRecording() ||
+      !scenarioActive ||
+      !isDriftScenario(selectedScenario)
+    ) {
+      return;
+    }
+
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(timestamp, selectedScenario);
+    recorder.mark({
+      timestamp,
+      type: "DRIFT_ONSET",
+      label: selectedScenario,
+    });
+    driftOnsetButton.disabled = true;
+  };
+
+  scenarioEndedButton.onclick = endScenario;
+
+  function endScenario(): void {
+    if (!recorder.isRecording() || !scenarioActive) return;
+
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(timestamp, "NORMAL_WORK");
+    recorder.mark({
+      timestamp,
+      type: "SCENARIO_ENDED",
+      label: selectedScenario,
+    });
+    scenarioActive = false;
+    driftOnsetButton.disabled = true;
+  }
 
   downloadButton.onclick = () => {
     const blob = new Blob([lastSessionLog], { type: "application/x-ndjson" });
@@ -233,7 +340,7 @@ async function main() {
       event = detector.update(feature);
       v1Result = v1Detector?.update(feature) ?? null;
       if (recorder.isRecording()) {
-        recorder.record(feature, "NORMAL_WORK", "UNKNOWN");
+        recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
       }
     }
 
@@ -263,6 +370,8 @@ async function main() {
       calibrationFrames ? "calibrating..." : "",
       calibrationMessage,
       `recording: ${recorder.isRecording() ? "yes" : "no"}`,
+      `scenario: ${scenarioLabeler.getCurrentLabel()}`,
+      scenarioActive ? "scenario marker: active" : "",
       event ? `state: ${event.state}` : "state: (calibrate first)",
       event ? `alert: ${event.alert}` : "",
       event && event.reason.length > 0 ? `reason: ${event.reason.join(", ")}` : "",
@@ -351,6 +460,12 @@ function addLayoutStyles(): void {
       min-height: 36px;
     }
 
+    .scenario-select {
+      grid-column: 1 / -1;
+      min-height: 36px;
+      padding: 0 8px;
+    }
+
     .status {
       box-sizing: border-box;
       width: 100%;
@@ -380,6 +495,23 @@ function addLayoutStyles(): void {
     }
   `;
   document.head.append(style);
+}
+
+function createMarkerButton(label: string, disabled: boolean): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.disabled = disabled;
+  return button;
+}
+
+function isDriftScenario(label: ScenarioLabel["label"]): boolean {
+  return label === "FORWARD_LEAN" ||
+    label === "FORWARD_HEAD" ||
+    label === "LEFT_LEAN" ||
+    label === "RIGHT_LEAN" ||
+    label === "SIDE_SHIFT" ||
+    label === "HEAD_TURN" ||
+    label === "CLOSE_TO_CAMERA";
 }
 
 main().catch((error) => {

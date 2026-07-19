@@ -216,6 +216,12 @@ Stored shape:
 - Done: the app restores that saved bundle when it starts.
 - Done: the status panel displays camera shoulder-width and face-center
   deltas against the saved CameraProfile.
+- Done: development-session recording supports `NORMAL_WORK`,
+  `TRANSIENT_ACTION`, `FORWARD_LEAN`, `FORWARD_HEAD`, `LEFT_LEAN`,
+  `RIGHT_LEAN`, `SIDE_SHIFT`, `HEAD_TURN`, `CLOSE_TO_CAMERA`, and
+  `CAMERA_CHANGE` labels.
+- Done: development-session JSONL entries preserve scenario start, drift
+  onset, and scenario end markers.
 
 ### `PersonalizedDriftDetector`
 
