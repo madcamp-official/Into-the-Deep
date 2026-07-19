@@ -1,6 +1,33 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
-import type { CameraRawFeature } from "../types";
+import type { CameraProfile, CameraRawFeature } from "../types";
+
+const CAMERA_PROFILE_FIELDS = [
+  "shoulderWidth",
+  "faceCenterX",
+  "faceCenterY",
+  "shoulderCenterX",
+  "shoulderCenterY",
+  "faceToShoulderRatio",
+  "yawProxy",
+  "pitchProxy",
+] as const satisfies readonly (keyof CameraProfile)[];
+
+export function buildCameraProfile(
+  calibrationFrames: CameraRawFeature[],
+): CameraProfile | null {
+  if (calibrationFrames.length === 0) {
+    return null;
+  }
+
+  const profile = {} as CameraProfile;
+
+  for (const field of CAMERA_PROFILE_FIELDS) {
+    profile[field] = median(calibrationFrames.map((frame) => frame[field]));
+  }
+
+  return profile;
+}
 
 // Day2 draft: computes the raw camera-framing signals B's Camera Profile
 // Validator needs (plan.md section 9). A only produces these numbers —
@@ -56,4 +83,13 @@ export function toCameraRawFeature(
     yawProxy,
     pitchProxy,
   };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
 }
