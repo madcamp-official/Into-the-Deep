@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
-import { RELIABILITY_THRESHOLDS, assessLandmarkQuality } from "./index";
+import { RELIABILITY_THRESHOLDS, assessLandmarkQuality, describeUnreliableState } from "./index";
 
 function point(x: number, y: number, visibility: number): NormalizedLandmark {
   return { x, y, z: 0, visibility };
@@ -63,5 +63,42 @@ describe("assessLandmarkQuality", () => {
 
     expect(quality.eyesReliable).toBe(false);
     expect(quality.reliable).toBe(true);
+  });
+});
+
+describe("describeUnreliableState", () => {
+  it("returns NO_PERSON when no one is in frame at all", () => {
+    const quality = assessLandmarkQuality(undefined, 0);
+
+    expect(quality.personPresent).toBe(false);
+    expect(describeUnreliableState(quality)).toBe("NO_PERSON");
+  });
+
+  it("returns NO_PERSON when the landmark array is missing nose/shoulders", () => {
+    const quality = assessLandmarkQuality([], 0);
+
+    expect(describeUnreliableState(quality)).toBe("NO_PERSON");
+  });
+
+  it("returns UNKNOWN (not NO_PERSON) when a person is present but unreliable, e.g. low confidence", () => {
+    const landmarks = createLandmarks({
+      nose: point(0.5, 0.4, RELIABILITY_THRESHOLDS.minConfidence - 0.1),
+    });
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.reliable).toBe(false);
+    expect(quality.personPresent).toBe(true);
+    expect(describeUnreliableState(quality)).toBe("UNKNOWN");
+  });
+
+  it("returns UNKNOWN (not NO_PERSON) when a person is present but partially off-frame", () => {
+    const landmarks = createLandmarks({
+      nose: point(0.005, 0.4, 1), // inside RELIABILITY_THRESHOLDS.frameMargin of the edge
+    });
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.reliable).toBe(false);
+    expect(quality.personPresent).toBe(true);
+    expect(describeUnreliableState(quality)).toBe("UNKNOWN");
   });
 });
