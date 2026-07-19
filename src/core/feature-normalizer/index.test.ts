@@ -74,3 +74,55 @@ describe("toFrameFeature", () => {
     expect(feature?.confidence).toBe(0.2);
   });
 });
+
+describe("toFrameFeature smoothing", () => {
+  it("moves a smoothed value only SMOOTHING_ALPHA of the way toward a sudden raw jump", () => {
+    const before = createLandmarks();
+    const after = createLandmarks({
+      leftShoulder: point(0.4, 0.68, 1),
+      rightShoulder: point(0.6, 0.6, 1),
+    });
+
+    const previous = toFrameFeature(before, 0);
+    const rawTarget = toFrameFeature(after, 1000); // no `previous` -> unsmoothed reading
+    const smoothed = toFrameFeature(after, 1000, previous);
+
+    expect(previous).not.toBeNull();
+    expect(rawTarget).not.toBeNull();
+    expect(smoothed).not.toBeNull();
+    if (!previous || !rawTarget || !smoothed) return;
+
+    // Raw reading really did change (otherwise this test would prove nothing).
+    expect(rawTarget.shoulderTilt).not.toBeCloseTo(previous.shoulderTilt, 5);
+
+    const expected = previous.shoulderTilt + 0.3 * (rawTarget.shoulderTilt - previous.shoulderTilt);
+    expect(smoothed.shoulderTilt).toBeCloseTo(expected, 10);
+    // Landed strictly between the old and new raw values, not at either end.
+    expect(smoothed.shoulderTilt).not.toBeCloseTo(previous.shoulderTilt, 3);
+    expect(smoothed.shoulderTilt).not.toBeCloseTo(rawTarget.shoulderTilt, 3);
+  });
+
+  it("does not smooth against a stale value after a reliability gap re-fills yawProxy", () => {
+    const earOccluded = createLandmarks({
+      rightEar: point(0.55, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+    });
+    const earVisibleAgain = createLandmarks({
+      // Asymmetric around the nose (x=0.5) so yawProxy comes out non-zero —
+      // a symmetric pair would make this test pass even if smoothing were
+      // wrongly applied, since 0 blended with anything still lands near 0.
+      leftEar: point(0.4, 0.4, 1),
+      rightEar: point(0.56, 0.4, 1),
+    });
+
+    const previous = toFrameFeature(earOccluded, 0);
+    expect(previous?.yawProxy).toBeUndefined();
+
+    const resumed = toFrameFeature(earVisibleAgain, 1000, previous);
+    const rawTarget = toFrameFeature(earVisibleAgain, 1000); // unsmoothed reference
+
+    expect(resumed?.yawProxy).toBeDefined();
+    // No valid previous.yawProxy to anchor to, so this frame should be the
+    // raw reading, not something blended against a value that never existed.
+    expect(resumed?.yawProxy).toBeCloseTo(rawTarget?.yawProxy ?? NaN, 10);
+  });
+});

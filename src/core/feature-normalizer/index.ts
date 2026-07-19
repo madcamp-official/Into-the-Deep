@@ -3,13 +3,23 @@ import type { FrameFeature } from "../types";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
 import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 
+// How much each frame's smoothed value moves toward the raw reading —
+// lower is smoother/slower to react, 1 disables smoothing entirely.
+// Candidate value; not yet tuned against a real development session. Same
+// weight for every feature for now, even though yawProxy in particular
+// looked noisier than the rest during the V1 driftScore review — worth
+// revisiting with a per-feature weight if this uniform value isn't enough.
+const SMOOTHING_ALPHA = 0.3;
+
 // FrameFeature calculation described in plan.md section 8. Coordinates are
 // normalized to shoulder-center origin / shoulder-width scale rather than
-// raw pixels. Sudden landmark-jump rejection is a Day3 concern once we have
-// a motion-energy baseline to judge jumps against.
+// raw pixels. Values are exponentially smoothed against `previous` to cut
+// down landmark jitter (plan.md Day3 "feature 흔들림 줄이기"); outright
+// jump rejection is a separate, not-yet-implemented concern.
 //
-// `previous` is the last FrameFeature (if any) — passing it lets this
-// compute a real motionEnergy value; omit it (or pass null) to get 0, e.g.
+// `previous` is the last FrameFeature (if any) — passing it anchors the
+// smoothing and lets this compute a real motionEnergy value; omit it (or
+// pass null) to get an unsmoothed first reading and motionEnergy 0, e.g.
 // on the first frame or right after a reliability gap.
 export function toFrameFeature(
   landmarks: NormalizedLandmark[],
@@ -36,7 +46,7 @@ export function toFrameFeature(
   // In an unmirrored camera frame, the anatomical left shoulder sits at a
   // higher x than the right, so this convention keeps the tilt near 0 for
   // level shoulders instead of near +-180.
-  const shoulderTilt =
+  const rawShoulderTilt =
     (Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x) *
       180) /
     Math.PI;
@@ -63,28 +73,28 @@ export function toFrameFeature(
     ...(leftEar ? [leftEar.visibility] : []),
     ...(rightEar ? [rightEar.visibility] : []),
   );
-  const headXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
-  const bodyScale = shoulderWidth;
+  const rawHeadXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
+  const rawBodyScale = shoulderWidth;
   const faceCenterY =
     eyesReliable && leftEye && rightEye ? (leftEye.y + rightEye.y) / 2 : undefined;
   const eyeDistance =
     eyesReliable && leftEye && rightEye
       ? Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y)
       : undefined;
-  const faceToShoulderRatio =
+  const rawFaceToShoulderRatio =
     eyeDistance !== undefined && shoulderWidth > 0 ? eyeDistance / shoulderWidth : undefined;
-  const pitchProxy =
+  const rawPitchProxy =
     faceCenterY !== undefined && shoulderWidth > 0 ? (nose.y - faceCenterY) / shoulderWidth : undefined;
 
   // Head-turn proxy: how asymmetric the nose sits between the two ears,
   // mirrors camera-profile's yawProxy. Facing the camera straight-on keeps
   // this near 0; turning the head left/right pushes it toward +-1.
-  let yawProxy: number | undefined;
+  let rawYawProxy: number | undefined;
   if (earsReliable && leftEar && rightEar) {
     const leftDist = Math.abs(nose.x - leftEar.x);
     const rightDist = Math.abs(nose.x - rightEar.x);
     const total = leftDist + rightDist;
-    yawProxy = total > 0 ? (leftDist - rightDist) / total : 0;
+    rawYawProxy = total > 0 ? (leftDist - rightDist) / total : 0;
   }
 
   // Shoulder-center position scaled by shoulder width, same convention as
@@ -97,8 +107,21 @@ export function toFrameFeature(
   // sideways shifting (e.g. sliding sideways in a chair); shoulderYOffset
   // tracks shoulders rising/dropping and replaces headYOffset as the
   // posture-height signal.
-  const shoulderXOffset = shoulderWidth > 0 ? shoulderCenterX / shoulderWidth : 0;
-  const shoulderYOffset = shoulderWidth > 0 ? shoulderCenterY / shoulderWidth : 0;
+  const rawShoulderXOffset = shoulderWidth > 0 ? shoulderCenterX / shoulderWidth : 0;
+  const rawShoulderYOffset = shoulderWidth > 0 ? shoulderCenterY / shoulderWidth : 0;
+
+  const shoulderTilt = smooth(rawShoulderTilt, previous?.shoulderTilt);
+  const headXOffset = smooth(rawHeadXOffset, previous?.headXOffset);
+  const shoulderXOffset = smooth(rawShoulderXOffset, previous?.shoulderXOffset);
+  const shoulderYOffset = smooth(rawShoulderYOffset, previous?.shoulderYOffset);
+  const bodyScale = smooth(rawBodyScale, previous?.bodyScale);
+  const faceToShoulderRatio =
+    rawFaceToShoulderRatio !== undefined
+      ? smooth(rawFaceToShoulderRatio, previous?.faceToShoulderRatio)
+      : undefined;
+  const pitchProxy =
+    rawPitchProxy !== undefined ? smooth(rawPitchProxy, previous?.pitchProxy) : undefined;
+  const yawProxy = rawYawProxy !== undefined ? smooth(rawYawProxy, previous?.yawProxy) : undefined;
 
   const motionEnergy = previous
     ? Math.hypot(
@@ -123,6 +146,15 @@ export function toFrameFeature(
     ...(yawProxy !== undefined ? { yawProxy } : {}),
     motionEnergy,
   };
+}
+
+// Exponential moving average: nudges the smoothed value toward the raw
+// reading by SMOOTHING_ALPHA each frame rather than jumping straight to
+// it. `previous` is undefined on the first frame (or right after a
+// reliability gap, since main.ts resets its previousFeature to null then),
+// so there's nothing to smooth against yet — just return the raw reading.
+function smooth(current: number, previous: number | undefined): number {
+  return previous === undefined ? current : previous + SMOOTHING_ALPHA * (current - previous);
 }
 
 function isVisible(point: NormalizedLandmark | undefined, minConfidence: number): boolean {
