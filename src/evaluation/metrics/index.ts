@@ -12,8 +12,11 @@ export interface MetricsReport {
 // section 20), not the posture drift detection rate.
 const DRIFT_LABELS: ReadonlySet<ScenarioLabel["label"]> = new Set([
   "FORWARD_LEAN",
+  "FORWARD_HEAD",
   "LEFT_LEAN",
   "RIGHT_LEAN",
+  "SIDE_SHIFT",
+  "HEAD_TURN",
   "CLOSE_TO_CAMERA",
 ]);
 

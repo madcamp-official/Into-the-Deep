@@ -90,9 +90,14 @@ export interface ScenarioLabel {
   timestamp: number;
   label:
     | "NORMAL_WORK"
+    | "TRANSIENT_ACTION"
+    | "SETTLING"
     | "FORWARD_LEAN"
+    | "FORWARD_HEAD"
     | "LEFT_LEAN"
     | "RIGHT_LEAN"
+    | "SIDE_SHIFT"
+    | "HEAD_TURN"
     | "CLOSE_TO_CAMERA"
     | "CAMERA_CHANGE";
 }
