@@ -126,3 +126,43 @@ describe("toFrameFeature smoothing", () => {
     expect(resumed?.yawProxy).toBeCloseTo(rawTarget?.yawProxy ?? NaN, 10);
   });
 });
+
+describe("toFrameFeature jump rejection", () => {
+  it("rejects a frame whose raw reading jumps far from the previous frame", () => {
+    const previous = toFrameFeature(createLandmarks(), 0);
+    expect(previous).not.toBeNull();
+
+    // A different person's landmarks landing in frame, or a momentary
+    // mis-detection — shoulders/nose end up somewhere completely different
+    // one frame later, which no real body actually does in ~33ms.
+    const jumped = createLandmarks({
+      nose: point(0.15, 0.15, 1),
+      leftShoulder: point(0.05, 0.2, 1),
+      rightShoulder: point(0.9, 0.85, 1),
+    });
+
+    expect(toFrameFeature(jumped, 1000, previous)).toBeNull();
+  });
+
+  it("does not reject ordinary small frame-to-frame motion", () => {
+    const previous = toFrameFeature(createLandmarks(), 0);
+    expect(previous).not.toBeNull();
+
+    const nextFrame = createLandmarks({
+      leftShoulder: point(0.4, 0.605, 1),
+      rightShoulder: point(0.6, 0.598, 1),
+    });
+
+    expect(toFrameFeature(nextFrame, 33, previous)).not.toBeNull();
+  });
+
+  it("never rejects the first frame, even with no previous to compare against", () => {
+    const extreme = createLandmarks({
+      nose: point(0.15, 0.15, 1),
+      leftShoulder: point(0.05, 0.2, 1),
+      rightShoulder: point(0.9, 0.85, 1),
+    });
+
+    expect(toFrameFeature(extreme, 0)).not.toBeNull();
+  });
+});

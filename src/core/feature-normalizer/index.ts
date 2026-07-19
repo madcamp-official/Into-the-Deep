@@ -11,16 +11,27 @@ import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 // revisiting with a per-feature weight if this uniform value isn't enough.
 const SMOOTHING_ALPHA = 0.3;
 
+// How far a single frame's raw (pre-smoothing) reading is allowed to move
+// from the previous smoothed reading, combined the same way as
+// motionEnergy, before it's rejected outright instead of smoothed in. A
+// real single-frame jump this large is far more likely to be a momentary
+// mis-detection (another person's landmarks briefly overlapping, a hand
+// crossing the face) than genuine motion — nobody's shoulders actually
+// teleport between two 33ms-apart frames. Candidate value; not yet tuned
+// against a real development session.
+const JUMP_ENERGY_THRESHOLD = 25;
+
 // FrameFeature calculation described in plan.md section 8. Coordinates are
 // normalized to shoulder-center origin / shoulder-width scale rather than
 // raw pixels. Values are exponentially smoothed against `previous` to cut
-// down landmark jitter (plan.md Day3 "feature 흔들림 줄이기"); outright
-// jump rejection is a separate, not-yet-implemented concern.
+// down landmark jitter (plan.md Day3 "feature 흔들림 줄이기"), and a raw
+// reading that jumps too far in one frame is rejected outright (returns
+// null, same as a reliability gap) rather than smoothed in or used as-is.
 //
 // `previous` is the last FrameFeature (if any) — passing it anchors the
-// smoothing and lets this compute a real motionEnergy value; omit it (or
-// pass null) to get an unsmoothed first reading and motionEnergy 0, e.g.
-// on the first frame or right after a reliability gap.
+// smoothing/jump-rejection and lets this compute a real motionEnergy
+// value; omit it (or pass null) to get an unsmoothed first reading and
+// motionEnergy 0, e.g. on the first frame or right after a reliability gap.
 export function toFrameFeature(
   landmarks: NormalizedLandmark[],
   timestamp: number,
@@ -109,6 +120,20 @@ export function toFrameFeature(
   // posture-height signal.
   const rawShoulderXOffset = shoulderWidth > 0 ? shoulderCenterX / shoulderWidth : 0;
   const rawShoulderYOffset = shoulderWidth > 0 ? shoulderCenterY / shoulderWidth : 0;
+
+  if (previous) {
+    const rawJumpEnergy = Math.hypot(
+      rawHeadXOffset - previous.headXOffset,
+      rawShoulderXOffset - previous.shoulderXOffset,
+      rawShoulderYOffset - previous.shoulderYOffset,
+      rawShoulderTilt - previous.shoulderTilt,
+      rawBodyScale - previous.bodyScale,
+    );
+
+    if (rawJumpEnergy > JUMP_ENERGY_THRESHOLD) {
+      return null;
+    }
+  }
 
   const shoulderTilt = smooth(rawShoulderTilt, previous?.shoulderTilt);
   const headXOffset = smooth(rawHeadXOffset, previous?.headXOffset);
