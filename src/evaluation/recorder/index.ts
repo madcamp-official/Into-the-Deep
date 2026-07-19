@@ -1,4 +1,9 @@
-import type { FrameFeature, ScenarioLabel } from "../../core/types";
+import type {
+  CameraProfile,
+  FrameFeature,
+  ScenarioLabel,
+  UserProfile,
+} from "../../core/types";
 
 export type SessionMarkerType =
   | "SCENARIO_STARTED"
@@ -11,9 +16,18 @@ export interface SessionMarker {
   label: ScenarioLabel["label"];
 }
 
+export interface SessionMetadata {
+  userProfile: UserProfile;
+  cameraProfile: CameraProfile;
+  profileCreatedAt: number;
+}
+
 // Mirrors the sample-data/sample-session.jsonl schema (plan.md section 19).
 export interface SessionLogEntry {
   timestamp: number;
+  // Stored on the first frame only to keep the existing frame-oriented JSONL
+  // format while making each session replayable with its calibration snapshot.
+  metadata?: SessionMetadata;
   groundTruth: ScenarioLabel["label"];
   cameraState: string;
   confidence: number;
@@ -37,11 +51,13 @@ export class SessionRecorder {
   private entries: SessionLogEntry[] = [];
   private recording = false;
   private pendingMarkers: SessionMarker[] = [];
+  private metadata: SessionMetadata | undefined;
 
-  start(): void {
+  start(metadata?: SessionMetadata): void {
     this.recording = true;
     this.entries = [];
     this.pendingMarkers = [];
+    this.metadata = metadata;
   }
 
   stop(): readonly SessionLogEntry[] {
@@ -53,6 +69,7 @@ export class SessionRecorder {
       ];
     }
     this.pendingMarkers = [];
+    this.metadata = undefined;
     return this.entries;
   }
 
@@ -69,6 +86,9 @@ export class SessionRecorder {
 
     const entry: SessionLogEntry = {
       timestamp: feature.timestamp,
+      ...(this.entries.length === 0 && this.metadata
+        ? { metadata: this.metadata }
+        : {}),
       groundTruth,
       cameraState,
       confidence: feature.confidence,
@@ -103,6 +123,12 @@ export class SessionRecorder {
   getEntries(): readonly SessionLogEntry[] {
     return this.entries;
   }
+}
+
+export function getSessionMetadata(
+  entries: readonly SessionLogEntry[],
+): SessionMetadata | undefined {
+  return entries.find((entry) => entry.metadata)?.metadata;
 }
 
 export function toJSONL(entries: readonly SessionLogEntry[]): string {
