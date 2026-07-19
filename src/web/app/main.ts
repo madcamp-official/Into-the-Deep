@@ -6,7 +6,7 @@ import {
   buildCameraProfile,
   toCameraRawFeature,
 } from "../../core/camera-profile";
-import { assessLandmarkQuality } from "../../core/landmark-reliability";
+import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
 import { FixedThresholdDetector } from "../../core/fixed-threshold-detector";
 import {
@@ -303,7 +303,7 @@ async function main() {
 
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
-      status.textContent = `state: UNKNOWN\n${JSON.stringify(quality, null, 2)}`;
+      status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
       requestAnimationFrame(loop);
       return;
     }
