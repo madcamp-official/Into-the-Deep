@@ -71,6 +71,15 @@ export function assessLandmarkQuality(
   };
 }
 
+// Day3 A-task (plan.md: "사람이 화면 밖으로 나간 경우 NO_PERSON 처리").
+// Everything else that fails the reliability check (low confidence,
+// partially off-frame, etc.) stays lumped as UNKNOWN per plan.md section 8
+// — only "no person at all" gets pulled out as its own label. Callers
+// should only use this when `quality.reliable` is already false.
+export function describeUnreliableState(quality: LandmarkQuality): "NO_PERSON" | "UNKNOWN" {
+  return quality.personPresent ? "UNKNOWN" : "NO_PERSON";
+}
+
 function isVisible(point: NormalizedLandmark | undefined, minConfidence: number): boolean {
   return point !== undefined && point.visibility >= minConfidence;
 }
