@@ -18,6 +18,11 @@ import {
   toJSONL,
 } from "../../evaluation/recorder";
 import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
+import {
+  getNextDevelopmentStep,
+  STANDARD_DEVELOPMENT_SESSION,
+  type DevelopmentSessionStep,
+} from "../../evaluation/development-session";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import type {
   CameraProfile,
@@ -34,6 +39,7 @@ import type {
 // rather than a real assessment.
 const CALIBRATION_DURATION_MS = 3000;
 const MIN_CALIBRATION_FRAMES = 10;
+const AUTOMATED_SESSION_COUNTDOWN_SECONDS = 3;
 
 async function main() {
   const app = document.querySelector<HTMLDivElement>("#app");
@@ -65,6 +71,9 @@ async function main() {
   const recordButton = document.createElement("button");
   recordButton.textContent = "측정 시작";
   recordButton.disabled = true;
+  const automatedSessionButton = document.createElement("button");
+  automatedSessionButton.textContent = "자동 Development Session";
+  automatedSessionButton.disabled = true;
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
@@ -96,6 +105,7 @@ async function main() {
     calibrateButton,
     updateBaselineButton,
     recordButton,
+    automatedSessionButton,
     downloadButton,
     scenarioSelect,
     scenarioStartedButton,
@@ -105,8 +115,11 @@ async function main() {
 
   const status = document.createElement("pre");
   status.className = "status";
+  const sessionInstruction = document.createElement("div");
+  sessionInstruction.className = "session-instruction";
+  sessionInstruction.textContent = "자동 Development Session을 시작하면 안내가 표시됩니다.";
 
-  sidePanel.append(controls, status);
+  sidePanel.append(controls, sessionInstruction, status);
   layout.append(canvas, sidePanel);
   app.append(video, layout);
   addLayoutStyles();
@@ -135,6 +148,11 @@ async function main() {
   let lastSessionLog = "";
   let selectedScenario: ScenarioLabel["label"] = "NORMAL_WORK";
   let scenarioActive = false;
+  let automatedSession: {
+    startedAt: number;
+    stepIndex: number;
+    steps: readonly DevelopmentSessionStep[];
+  } | null = null;
 
   const recorder = new SessionRecorder();
   const scenarioLabeler = new ScenarioLabeler();
@@ -202,6 +220,7 @@ async function main() {
     detector = new FixedThresholdDetector(profile.originalCenters);
     v1Detector = new PersonalizedDriftDetector(profile);
     recordButton.disabled = false;
+    automatedSessionButton.disabled = false;
   }
 
   calibrateButton.onclick = startCalibration;
@@ -209,30 +228,9 @@ async function main() {
 
   recordButton.onclick = () => {
     if (!recorder.isRecording()) {
-      recorder.start(
-        profile && cameraProfile && profileCreatedAt !== null
-          ? {
-              userProfile: profile,
-              cameraProfile,
-              profileCreatedAt,
-            }
-          : undefined,
-      );
-      scenarioLabeler.reset(performance.now());
-      scenarioActive = false;
-      recordButton.textContent = "측정 종료";
-      downloadButton.disabled = true;
-      scenarioStartedButton.disabled = false;
-      scenarioEndedButton.disabled = false;
+      beginRecording();
     } else {
-      endScenario();
-      const entries = recorder.stop();
-      recordButton.textContent = "측정 시작";
-      lastSessionLog = toJSONL(entries);
-      downloadButton.disabled = entries.length === 0;
-      scenarioStartedButton.disabled = true;
-      driftOnsetButton.disabled = true;
-      scenarioEndedButton.disabled = true;
+      finishRecording();
     }
   };
 
@@ -244,19 +242,7 @@ async function main() {
 
   scenarioStartedButton.onclick = () => {
     if (!recorder.isRecording() || scenarioActive) return;
-
-    const timestamp = performance.now();
-    scenarioLabeler.setLabel(
-      timestamp,
-      isDriftScenario(selectedScenario) ? "SETTLING" : selectedScenario,
-    );
-    recorder.mark({
-      timestamp,
-      type: "SCENARIO_STARTED",
-      label: selectedScenario,
-    });
-    scenarioActive = true;
-    driftOnsetButton.disabled = !isDriftScenario(selectedScenario);
+    startScenario(selectedScenario);
   };
 
   driftOnsetButton.onclick = () => {
@@ -268,17 +254,88 @@ async function main() {
       return;
     }
 
-    const timestamp = performance.now();
-    scenarioLabeler.setLabel(timestamp, selectedScenario);
-    recorder.mark({
-      timestamp,
-      type: "DRIFT_ONSET",
-      label: selectedScenario,
-    });
-    driftOnsetButton.disabled = true;
+    markDriftOnset(selectedScenario);
   };
 
   scenarioEndedButton.onclick = endScenario;
+
+  automatedSessionButton.onclick = () => {
+    if (automatedSession) {
+      finishRecording();
+      return;
+    }
+    if (recorder.isRecording()) return;
+
+    beginRecording();
+    automatedSession = {
+      startedAt:
+        performance.now() + AUTOMATED_SESSION_COUNTDOWN_SECONDS * 1000,
+      stepIndex: -1,
+      steps: STANDARD_DEVELOPMENT_SESSION,
+    };
+    setManualControlsDisabled(true);
+  };
+
+  function beginRecording(): void {
+    if (recorder.isRecording()) return;
+
+    recorder.start(
+      profile && cameraProfile && profileCreatedAt !== null
+        ? { userProfile: profile, cameraProfile, profileCreatedAt }
+        : undefined,
+    );
+    scenarioLabeler.reset(performance.now());
+    scenarioActive = false;
+    recordButton.textContent = "측정 종료";
+    automatedSessionButton.textContent = "자동 세션 중지";
+    downloadButton.disabled = true;
+    scenarioStartedButton.disabled = false;
+    scenarioEndedButton.disabled = false;
+  }
+
+  function finishRecording(): void {
+    if (!recorder.isRecording()) return;
+
+    endScenario();
+    const entries = recorder.stop();
+    automatedSession = null;
+    recordButton.textContent = "측정 시작";
+    automatedSessionButton.textContent = "자동 Development Session";
+    lastSessionLog = toJSONL(entries);
+    downloadButton.disabled = entries.length === 0;
+    scenarioStartedButton.disabled = true;
+    driftOnsetButton.disabled = true;
+    scenarioEndedButton.disabled = true;
+    setManualControlsDisabled(false);
+    sessionInstruction.textContent =
+      "세션이 종료되었습니다. 로그를 다운로드해 replay 평가에 사용할 수 있습니다.";
+  }
+
+  function startScenario(label: ScenarioLabel["label"]): void {
+    if (!recorder.isRecording() || scenarioActive) return;
+
+    selectedScenario = label;
+    scenarioSelect.value = label;
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(
+      timestamp,
+      isDriftScenario(label) ? "SETTLING" : label,
+    );
+    recorder.mark({ timestamp, type: "SCENARIO_STARTED", label });
+    scenarioActive = true;
+    driftOnsetButton.disabled = !isDriftScenario(label);
+  }
+
+  function markDriftOnset(label: ScenarioLabel["label"]): void {
+    if (!recorder.isRecording() || !scenarioActive || !isDriftScenario(label)) {
+      return;
+    }
+
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(timestamp, label);
+    recorder.mark({ timestamp, type: "DRIFT_ONSET", label });
+    driftOnsetButton.disabled = true;
+  }
 
   function endScenario(): void {
     if (!recorder.isRecording() || !scenarioActive) return;
@@ -294,6 +351,70 @@ async function main() {
     driftOnsetButton.disabled = true;
   }
 
+  function setManualControlsDisabled(disabled: boolean): void {
+    scenarioSelect.disabled = disabled;
+    scenarioStartedButton.disabled = disabled || !recorder.isRecording();
+    driftOnsetButton.disabled = true;
+    scenarioEndedButton.disabled = disabled || !recorder.isRecording();
+  }
+
+  function processAutomatedSession(timestamp: number): void {
+    if (!automatedSession) return;
+
+    const elapsedSeconds = (timestamp - automatedSession.startedAt) / 1000;
+    while (automatedSession) {
+      const next = getNextDevelopmentStep(
+        automatedSession.steps,
+        automatedSession.stepIndex,
+        elapsedSeconds,
+      );
+      if (!next) break;
+
+      automatedSession.stepIndex = next.index;
+      const { action, label } = next.step;
+      if (action === "SCENARIO_STARTED" && label) {
+        if (scenarioActive) endScenario();
+        startScenario(label);
+      }
+      if (action === "DRIFT_ONSET" && label) markDriftOnset(label);
+      if (action === "SCENARIO_ENDED") endScenario();
+      if (action === "SESSION_ENDED") finishRecording();
+    }
+  }
+
+  function updateSessionInstruction(timestamp: number): void {
+    if (!automatedSession) return;
+
+    if (timestamp < automatedSession.startedAt) {
+      sessionInstruction.textContent =
+        `잠시 후 자동 측정을 시작합니다. 준비하세요 (${Math.ceil((automatedSession.startedAt - timestamp) / 1000)}초)`;
+      return;
+    }
+
+    const currentStep = automatedSession.steps[automatedSession.stepIndex];
+    if (!currentStep) {
+      sessionInstruction.textContent = "자동 측정을 준비하는 중입니다.";
+      return;
+    }
+
+    if (currentStep.action === "SCENARIO_STARTED" && currentStep.label) {
+      sessionInstruction.textContent = isDriftScenario(currentStep.label)
+        ? `${scenarioName(currentStep.label)} 자세로 천천히 이동하세요. 잠시 후 자세를 유지합니다.`
+        : currentStep.label === "TRANSIENT_ACTION"
+          ? "짧은 자연 행동을 한 뒤 정상 자세로 돌아오세요."
+          : "정상 자세로 편하게 작업하세요.";
+      return;
+    }
+
+    if (currentStep.action === "DRIFT_ONSET" && currentStep.label) {
+      sessionInstruction.textContent =
+        `${scenarioName(currentStep.label)} 자세를 완성했습니다. 지금 자세를 유지하세요.`;
+      return;
+    }
+
+    sessionInstruction.textContent = "자세를 풀고 정상 자세로 돌아와 편하게 작업하세요.";
+  }
+
   downloadButton.onclick = () => {
     const blob = new Blob([lastSessionLog], { type: "application/x-ndjson" });
     const url = URL.createObjectURL(blob);
@@ -306,6 +427,8 @@ async function main() {
 
   const loop = () => {
     const timestamp = performance.now();
+    processAutomatedSession(timestamp);
+    updateSessionInstruction(timestamp);
     const result = detectPoseForVideoFrame(landmarker, video, timestamp);
     const landmarks = result.landmarks[0];
 
@@ -384,6 +507,11 @@ async function main() {
       `recording: ${recorder.isRecording() ? "yes" : "no"}`,
       `scenario: ${scenarioLabeler.getCurrentLabel()}`,
       scenarioActive ? "scenario marker: active" : "",
+      automatedSession
+        ? timestamp < automatedSession.startedAt
+          ? `automated session starts in ${Math.ceil((automatedSession.startedAt - timestamp) / 1000)}s`
+          : `automated session: ${((timestamp - automatedSession.startedAt) / 1000).toFixed(0)}s`
+        : "",
       event ? `state: ${event.state}` : "state: (calibrate first)",
       event ? `alert: ${event.alert}` : "",
       event && event.reason.length > 0 ? `reason: ${event.reason.join(", ")}` : "",
@@ -490,6 +618,19 @@ function addLayoutStyles(): void {
       background: #f3f4f6;
     }
 
+    .session-instruction {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 64px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-weight: 600;
+      line-height: 1.5;
+    }
+
     @media (max-width: 900px) {
       #app {
         padding: 16px;
@@ -524,6 +665,19 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "SIDE_SHIFT" ||
     label === "HEAD_TURN" ||
     label === "CLOSE_TO_CAMERA";
+}
+
+function scenarioName(label: ScenarioLabel["label"]): string {
+  const names: Partial<Record<ScenarioLabel["label"], string>> = {
+    FORWARD_LEAN: "앞으로 숙이는",
+    FORWARD_HEAD: "거북목",
+    LEFT_LEAN: "왼쪽으로 기울이는",
+    RIGHT_LEAN: "오른쪽으로 기울이는",
+    SIDE_SHIFT: "좌우로 이동하는",
+    HEAD_TURN: "고개를 돌리는",
+    CLOSE_TO_CAMERA: "카메라에 가까이 가는",
+  };
+  return names[label] ?? label;
 }
 
 main().catch((error) => {
