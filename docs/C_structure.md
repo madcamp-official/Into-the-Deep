@@ -121,6 +121,46 @@ diverges from V0 on real, noisier calibration data (and whether it
 actually improves precision once a real dev session is recorded) is still
 open — see "Next Work".
 
+### `compareV1ThresholdCandidates` / `formatThresholdSweepTable`
+
+File: `src/evaluation/v0-v1-comparison.ts`
+
+B owns `core/personalized-detector`'s `DEFAULT_PERSONALIZED_THRESHOLDS`
+(currently `driftScore: 3`) and is tuning it directly against real
+sessions. To give B measured numbers instead of duplicating that tuning
+work, `compareV1ThresholdCandidates` replays one session once per
+candidate `driftScore` cutoff (via `options` passed into `replay`,
+without touching `personalized-detector` itself) and reports
+`falseAlertsPerHour` / `sustainedDriftDetectionRate` / average delay for
+each. `formatThresholdSweepTable` renders it as one row per candidate.
+
+Example run (`buildGlanceAndForwardLeanSession(0.26)` from
+`v0-v1-comparison.fixtures.ts` — a sideways glance tuned to sit right at
+the decision boundary, plus the same real forward-lean drift):
+
+```text
+| driftScore >= | false alerts / hour | detection rate | avg delay (s) |
+| ------------- | -------------------- | --------------- | -------------- |
+| 2.0           | 327.27               | 100%            | 2.00           |
+| 2.5           | 327.27               | 100%            | 2.00           |
+| 3.0           | 327.27               | 100%            | 2.00           |
+| 3.5           | 327.27               | 100%            | 2.00           |
+| 4.0           | 327.27               | 100%            | 2.00           |
+| 4.5           | 0.00                 | 100%            | 2.00           |
+| 5.0           | 0.00                 | 100%            | 2.00           |
+| 6.0           | 0.00                 | 100%            | 2.00           |
+```
+
+The real forward-lean drift (driftScore ~7 in this fixture) stays
+detected across every candidate, while the glance (driftScore ~4) stops
+counting as a false alert once the cutoff passes it — i.e. raising
+`driftScore` past ~4 would silence this specific false-positive without
+losing the real detection, at least for this fixture's severity levels.
+This doesn't mean 4.5 is the right production value — real calibration
+noise will shift where things land — but it shows the sweep tool
+surfaces exactly the kind of before/after evidence B needs to pick a
+value deliberately rather than by feel.
+
 ## Next Work
 
 1. Once a real webcam session is recorded (see main.ts's Calibration /

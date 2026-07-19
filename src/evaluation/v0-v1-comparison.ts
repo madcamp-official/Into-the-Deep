@@ -1,6 +1,9 @@
 import type { DetectionEvent, ScenarioLabel, UserProfile } from "../core/types";
 import type { FixedThresholds } from "../core/fixed-threshold-detector";
-import type { PersonalizedThresholds } from "../core/personalized-detector";
+import {
+  DEFAULT_PERSONALIZED_THRESHOLDS,
+  type PersonalizedThresholds,
+} from "../core/personalized-detector";
 import { buildUserProfile } from "../core/profile-builder";
 import type { FrameFeature } from "../core/types";
 import { createV0Detector, createV1Detector, replay } from "./replay-evaluator";
@@ -82,6 +85,55 @@ const METRIC_ROWS: ReadonlyArray<{
     read: (metrics) => metrics.averageDetectionDelaySeconds.toFixed(2),
   },
 ];
+
+export interface ThresholdCandidateResult {
+  driftScore: number;
+  metrics: MetricsReport;
+}
+
+// Replays the same session through V1 once per candidate `driftScore` cutoff
+// (leaving every other threshold at its default), so a threshold change to
+// B's personalized-detector can be evaluated with real false-alert/detection
+// numbers instead of by feel — without editing
+// core/personalized-detector's DEFAULT_PERSONALIZED_THRESHOLDS itself.
+export function compareV1ThresholdCandidates(
+  entries: readonly SessionLogEntry[],
+  profile: UserProfile,
+  groundTruth: ScenarioLabel[],
+  driftScoreCandidates: readonly number[],
+): ThresholdCandidateResult[] {
+  return driftScoreCandidates.map((driftScore) => {
+    const thresholds: PersonalizedThresholds = {
+      ...DEFAULT_PERSONALIZED_THRESHOLDS,
+      driftScore,
+    };
+    const events = replay(entries, createV1Detector(profile, thresholds));
+
+    return { driftScore, metrics: computeMetrics(events, groundTruth) };
+  });
+}
+
+// Renders the threshold sweep as a plain-text table, one row per candidate.
+export function formatThresholdSweepTable(
+  results: readonly ThresholdCandidateResult[],
+): string {
+  const header = ["driftScore >=", "false alerts / hour", "detection rate", "avg delay (s)"];
+  const rows = results.map((result) => [
+    result.driftScore.toFixed(1),
+    result.metrics.falseAlertsPerHour.toFixed(2),
+    `${(result.metrics.sustainedDriftDetectionRate * 100).toFixed(0)}%`,
+    result.metrics.averageDetectionDelaySeconds.toFixed(2),
+  ]);
+
+  const widths = header.map((title, col) =>
+    Math.max(title.length, ...rows.map((row) => row[col].length)),
+  );
+  const formatRow = (row: string[]) =>
+    `| ${row.map((cell, col) => cell.padEnd(widths[col])).join(" | ")} |`;
+  const separator = `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`;
+
+  return [formatRow(header), separator, ...rows.map(formatRow)].join("\n");
+}
 
 // Renders a plain-text results table (plan.md section 23: "결과 테이블
 // 출력").
