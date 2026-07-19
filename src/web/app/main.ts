@@ -2,6 +2,10 @@ import { startWebcam } from "../camera-adapter/webcam";
 import { createPoseLandmarker, detectPoseForVideoFrame } from "../camera-adapter/pose-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
+import {
+  buildCameraProfile,
+  toCameraRawFeature,
+} from "../../core/camera-profile";
 import { assessLandmarkQuality } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
 import { FixedThresholdDetector } from "../../core/fixed-threshold-detector";
@@ -10,13 +14,21 @@ import {
   type PersonalizedDetectionResult,
 } from "../../core/personalized-detector";
 import { SessionRecorder, toJSONL } from "../../evaluation/recorder";
-import type { DetectionEvent, FrameFeature, UserProfile } from "../../core/types";
+import { loadProfiles, saveProfiles } from "../indexeddb-storage";
+import type {
+  CameraProfile,
+  CameraRawFeature,
+  DetectionEvent,
+  FrameFeature,
+  UserProfile,
+} from "../../core/types";
 
 // How long a Calibration/기준 자세 업데이트 click collects frames before
 // buildUserProfile() runs. No camera-state validator exists yet (that's
 // B's Day3 CameraProfile work), so cameraState is logged as "UNKNOWN"
 // rather than a real assessment.
 const CALIBRATION_DURATION_MS = 3000;
+const MIN_CALIBRATION_FRAMES = 10;
 
 async function main() {
   const app = document.querySelector<HTMLDivElement>("#app");
@@ -74,27 +86,76 @@ async function main() {
 
   let previousFeature: FrameFeature | null = null;
   let profile: UserProfile | null = null;
+  let cameraProfile: CameraProfile | null = null;
   let detector: FixedThresholdDetector | null = null;
   let v1Detector: PersonalizedDriftDetector | null = null;
   let calibrationFrames: FrameFeature[] | null = null;
+  let calibrationCameraFrames: CameraRawFeature[] | null = null;
   let calibrationDeadline = 0;
+  let calibrationMessage = "";
   let lastSessionLog = "";
 
   const recorder = new SessionRecorder();
 
+  try {
+    const storedProfiles = await loadProfiles();
+    if (storedProfiles) {
+      activateProfile(storedProfiles.userProfile, storedProfiles.cameraProfile);
+      calibrationMessage = "saved profile restored";
+    }
+  } catch (error) {
+    calibrationMessage = `profile restore failed: ${String(error)}`;
+  }
+
   function startCalibration() {
     calibrationFrames = [];
+    calibrationCameraFrames = [];
     calibrationDeadline = performance.now() + CALIBRATION_DURATION_MS;
+    calibrationMessage = "";
     calibrateButton.disabled = true;
     updateBaselineButton.disabled = true;
   }
 
-  function finishCalibration(frames: FrameFeature[]) {
-    profile = buildUserProfile(frames);
+  async function finishCalibration(
+    frames: FrameFeature[],
+    cameraFrames: CameraRawFeature[],
+  ): Promise<void> {
+    const nextProfile = buildUserProfile(frames);
+    const nextCameraProfile = buildCameraProfile(cameraFrames);
+
+    try {
+      if (
+        nextProfile.validFrameCount < MIN_CALIBRATION_FRAMES ||
+        cameraFrames.length < MIN_CALIBRATION_FRAMES ||
+        !nextCameraProfile
+      ) {
+        calibrationMessage = "calibration failed: not enough reliable frames";
+        return;
+      }
+
+      activateProfile(nextProfile, nextCameraProfile);
+      await saveProfiles({
+        userProfile: nextProfile,
+        cameraProfile: nextCameraProfile,
+        lastCalibrationAt: Date.now(),
+      });
+      calibrationMessage = "profile saved";
+    } catch (error) {
+      calibrationMessage = `profile save failed: ${String(error)}`;
+    } finally {
+      calibrateButton.disabled = false;
+      updateBaselineButton.disabled = false;
+    }
+  }
+
+  function activateProfile(
+    nextProfile: UserProfile,
+    nextCameraProfile: CameraProfile,
+  ): void {
+    profile = nextProfile;
+    cameraProfile = nextCameraProfile;
     detector = new FixedThresholdDetector(profile.originalCenters);
     v1Detector = new PersonalizedDriftDetector(profile);
-    calibrateButton.disabled = false;
-    updateBaselineButton.disabled = false;
     recordButton.disabled = false;
   }
 
@@ -150,12 +211,19 @@ async function main() {
       return;
     }
 
-    if (calibrationFrames) {
+    const cameraRawFeature = toCameraRawFeature(landmarks, timestamp);
+
+    if (calibrationFrames && calibrationCameraFrames) {
       calibrationFrames.push(feature);
+      if (cameraRawFeature) {
+        calibrationCameraFrames.push(cameraRawFeature);
+      }
       if (timestamp >= calibrationDeadline) {
         const frames = calibrationFrames;
+        const cameraFrames = calibrationCameraFrames;
         calibrationFrames = null;
-        finishCalibration(frames);
+        calibrationCameraFrames = null;
+        void finishCalibration(frames, cameraFrames);
       }
     }
 
@@ -170,7 +238,19 @@ async function main() {
     }
 
     status.textContent = [
-      "camera: not assessed yet (Day3 CameraProfile)",
+      cameraProfile
+        ? "camera profile: saved (assessment pending)"
+        : "camera profile: not calibrated",
+      getRatioDeltaLine(
+        "camera shoulder-width delta",
+        cameraRawFeature?.shoulderWidth,
+        cameraProfile?.shoulderWidth,
+      ),
+      getDeltaLine(
+        "camera face-center-x delta",
+        cameraRawFeature?.faceCenterX,
+        cameraProfile?.faceCenterX,
+      ),
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
       feature.faceToShoulderRatio !== undefined
         ? `face/shoulder ratio: ${feature.faceToShoulderRatio.toFixed(3)}`
@@ -181,6 +261,7 @@ async function main() {
       getRatioDeltaLine("bodyScale delta", feature.bodyScale, profile?.originalCenters.bodyScale),
       `calibrated: ${profile ? "yes" : "no"}`,
       calibrationFrames ? "calibrating..." : "",
+      calibrationMessage,
       `recording: ${recorder.isRecording() ? "yes" : "no"}`,
       event ? `state: ${event.state}` : "state: (calibrate first)",
       event ? `alert: ${event.alert}` : "",
@@ -215,10 +296,14 @@ function getDeltaLine(
 
 function getRatioDeltaLine(
   label: string,
-  currentValue: number,
+  currentValue: number | undefined,
   referenceValue: number | undefined,
 ): string {
-  if (referenceValue === undefined || referenceValue <= 0) {
+  if (
+    currentValue === undefined ||
+    referenceValue === undefined ||
+    referenceValue <= 0
+  ) {
     return "";
   }
 

@@ -19,6 +19,7 @@ FrameFeature[]
 
 ```text
 src/core/profile-builder/index.ts
+src/core/camera-profile/index.ts
 src/core/fixed-threshold-detector/index.ts
 src/core/personalized-detector/index.ts
 src/web/indexeddb-storage/index.ts
@@ -46,7 +47,7 @@ Current behavior:
   - `faceToShoulderRatio`, when available
   - `pitchProxy`, when available
   - `yawProxy`, when available
-- Stores those averages in `originalCenters`.
+- Stores those medians in `originalCenters`.
 - Initializes `adaptiveCenters` with the same values as `originalCenters`.
 - Stores MAD values in `featureDeviations`.
 - Records `calibrationDuration` and `validFrameCount`.
@@ -153,6 +154,8 @@ Current behavior:
 - Creates a `profiles` object store when the database is first initialized.
 - Saves one default profile bundle with key `"default"`.
 - Loads that default profile bundle, returning `null` when nothing is saved yet.
+- The web app saves a new profile after successful calibration and restores a
+  saved profile when it starts.
 
 Stored shape:
 
@@ -168,8 +171,8 @@ Stored shape:
 
 1. Tune V1's initial drift-score threshold using short development-session
    logs.
-2. Create and store a calibration `CameraProfile`.
-3. Record V0/V1 limitations found during manual camera sessions and replay.
+2. Record V0/V1 limitations found during manual camera sessions and replay.
+3. Implement the Day 4 camera assessment states and recalibration branch.
 4. Keep `npm run lint`, `npm run typecheck`, `npm run test`, and
    `npm run build` passing.
 
@@ -206,6 +209,13 @@ Stored shape:
   assessment is implemented.
 - Done: adaptive profile updates remain disabled; the profile is only read
   by V1 and is not changed automatically.
+- Done: calibration collects camera raw frames and creates a median-based
+  `CameraProfile`.
+- Done: successful calibration stores the `UserProfile`, `CameraProfile`,
+  and calibration timestamp in IndexedDB under `"default"`.
+- Done: the app restores that saved bundle when it starts.
+- Done: the status panel displays camera shoulder-width and face-center
+  deltas against the saved CameraProfile.
 
 ### `PersonalizedDriftDetector`
 
