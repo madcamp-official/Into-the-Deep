@@ -13,7 +13,7 @@ import {
 } from "../../core/camera-profile";
 import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
-import { createInitialMADProfile } from "../../core/mad-profile";
+import { createInitialMADProfile, normalizeFeature } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
 import {
@@ -653,6 +653,32 @@ async function main() {
       feature.pitchProxy !== undefined ? `pitch proxy: ${feature.pitchProxy.toFixed(3)}` : "",
       getDeltaLine("pitch delta", feature.pitchProxy, profile?.originalCenters.pitchProxy),
       getRatioDeltaLine("bodyScale delta", feature.bodyScale, profile?.originalCenters.bodyScale),
+      // FORWARD_HEAD (posture-rules.ts) needs faceToShoulderRatio score > 2
+      // AND (headShoulderDistanceRatio score > 2 OR pitchProxy score > 1.5).
+      // Showing the actual MAD-normalized scores here so it's visible
+      // exactly which condition is/isn't clearing its threshold live,
+      // rather than guessing at why a real turtle-neck isn't triggering.
+      profile
+        ? `forwardHead scores (need face>2 AND (dist>2 OR pitch>1.5)): face=${formatScore(
+            normalizeFeature(
+              feature.faceToShoulderRatio,
+              profile.originalCenters.faceToShoulderRatio,
+              madProfile.values.faceToShoulderRatio,
+            ),
+          )} dist=${formatScore(
+            normalizeFeature(
+              feature.headShoulderDistanceRatio,
+              profile.originalCenters.headShoulderDistanceRatio,
+              madProfile.values.headShoulderDistanceRatio,
+            ),
+          )} pitch=${formatScore(
+            normalizeFeature(
+              feature.pitchProxy,
+              profile.originalCenters.pitchProxy,
+              madProfile.values.pitchProxy,
+            ),
+          )}`
+        : "",
       `calibrated: ${profile ? "yes" : "no"}`,
       calibrationFrames ? "calibrating..." : "",
       calibrationMessage,
@@ -680,6 +706,10 @@ async function main() {
   };
 
   requestAnimationFrame(loop);
+}
+
+function formatScore(score: number | undefined): string {
+  return score === undefined ? "?" : score.toFixed(2);
 }
 
 function getDeltaLine(
