@@ -1,6 +1,6 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
-import type { LandmarkQuality } from "../types";
+import type { LandmarkName, LandmarkQuality } from "../types";
 
 export const RELIABILITY_THRESHOLDS = {
   minConfidence: 0.5,
@@ -42,6 +42,8 @@ export function assessLandmarkQuality(
       reliable: false,
       eyesReliable: false,
       earsReliable: false,
+      reliableLandmarks: [],
+      unreliableLandmarks: ["nose", "leftShoulder", "rightShoulder"],
     };
   }
 
@@ -59,6 +61,38 @@ export function assessLandmarkQuality(
   const earsReliable = isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
     isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
 
+  const landmarkChecks: Array<{
+    name: LandmarkName;
+    point: NormalizedLandmark | undefined;
+    minConfidence: number;
+  }> = [
+    { name: "nose", point: nose, minConfidence: RELIABILITY_THRESHOLDS.minConfidence },
+    {
+      name: "leftShoulder",
+      point: leftShoulder,
+      minConfidence: RELIABILITY_THRESHOLDS.minConfidence,
+    },
+    {
+      name: "rightShoulder",
+      point: rightShoulder,
+      minConfidence: RELIABILITY_THRESHOLDS.minConfidence,
+    },
+    { name: "leftEye", point: leftEye, minConfidence: RELIABILITY_THRESHOLDS.eyeMinConfidence },
+    { name: "rightEye", point: rightEye, minConfidence: RELIABILITY_THRESHOLDS.eyeMinConfidence },
+    { name: "leftEar", point: leftEar, minConfidence: RELIABILITY_THRESHOLDS.earMinConfidence },
+    { name: "rightEar", point: rightEar, minConfidence: RELIABILITY_THRESHOLDS.earMinConfidence },
+  ];
+  const reliableLandmarks = landmarkChecks
+    .filter(({ point, minConfidence }) =>
+      point !== undefined && isInFrame(point) && point.visibility >= minConfidence,
+    )
+    .map(({ name }) => name);
+  const unreliableLandmarks = landmarkChecks
+    .filter(({ point, minConfidence }) =>
+      point === undefined || !isInFrame(point) || point.visibility < minConfidence,
+    )
+    .map(({ name }) => name);
+
   return {
     timestamp,
     personPresent,
@@ -68,6 +102,8 @@ export function assessLandmarkQuality(
     reliable,
     eyesReliable,
     earsReliable,
+    reliableLandmarks,
+    unreliableLandmarks,
   };
 }
 
