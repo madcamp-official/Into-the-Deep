@@ -16,6 +16,12 @@ const PROFILE_FEATURES = [
   "headXRatio",
   "headShoulderDistanceRatio",
   "bodyCompressionRatio",
+  // Needed as calibration baselines for posture-rule-detector's generic
+  // CALIBRATION-reference normalization (FORWARD_LEAN, BACKWARD_LEAN,
+  // HEAD_TURN, HEAD_BACK, TORSO_TWIST rules).
+  "correctedYaw",
+  "forwardLeanProxy",
+  "shoulderWidthRatio",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {
