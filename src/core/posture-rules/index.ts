@@ -21,13 +21,20 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["faceToShoulderRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
   },
-  {
-    postureType: "SIDE_SHIFT",
-    requiredLandmarks: CORE,
-    required: [{ feature: "shoulderXOffset", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
-    supporting: ["shoulderCenterX"],
-    reason: "shoulder center moved sideways from the calibrated position",
-  },
+  // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
+  // shoulderWidth — an absolute screen position divided by scale, not a
+  // body-relative quantity. Sliding a chair (pure distance/position change,
+  // camera untouched) moves this exactly like a real sideways shift would,
+  // so it can't be judged as posture without also solving the environment/
+  // camera-vs-posture disambiguation problem. Confirmed live: this rule
+  // fired BAD on a chair move alone, the same false positive already fixed
+  // twice today in fixed-threshold-detector/personalized-detector.
+  // need_discussion #6 already decided chair movement shouldn't alert —
+  // there's no currently-computed feature that captures "moved sideways"
+  // in a genuinely body-relative way (feature_discussion only lists
+  // absolute-position features — shoulderCenterX, globalTranslationX — for
+  // this scenario), so this posture type stays unimplemented until one
+  // exists.
   {
     postureType: "FORWARD_LEAN",
     requiredLandmarks: CORE,
@@ -97,6 +104,27 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["headYRatio", "headShoulderDistanceRatio"],
     reason: "head is tilted backward without a matching torso lean",
+  },
+  {
+    postureType: "CHIN_TUCK",
+    requiredLandmarks: EYES,
+    required: [
+      { feature: "faceToShoulderRatioDelta", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+    ],
+    anyOf: [{ feature: "pitchProxy", operator: "LT", threshold: -1.5, reference: "CALIBRATION" }],
+    supporting: ["headXRatio"],
+    reason: "chin is pulled backward relative to the calibrated head position",
+  },
+  {
+    postureType: "TORSO_TWIST",
+    requiredLandmarks: CORE,
+    required: [
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+    ],
+    supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
+    reason: "torso direction differs from the calibrated forward direction",
   },
   {
     postureType: "SHOULDERS_ONLY_TWIST",

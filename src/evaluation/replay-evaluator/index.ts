@@ -52,8 +52,10 @@ export function createV2DetectorFromSession(entries: readonly SessionLogEntry[])
   return (entry) => {
     const feature = toFrameFeature(entry);
     const event = detector.update(feature);
-    madProfile = updater.update(feature, { matchedPosture: event.postureType });
-    detector.setMADProfile(madProfile);
+    if (metadata.sessionType !== "CAMERA") {
+      madProfile = updater.update(feature, { matchedPosture: event.postureType });
+      detector.setMADProfile(madProfile);
+    }
     return event;
   };
 }

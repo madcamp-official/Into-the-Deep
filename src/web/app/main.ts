@@ -13,7 +13,7 @@ import {
 } from "../../core/camera-profile";
 import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
-import { createInitialMADProfile } from "../../core/mad-profile";
+import { createInitialMADProfile, normalizeFeature } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
 import {
@@ -24,9 +24,11 @@ import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
 import { analyzeDevelopmentSession } from "../../evaluation/development-analysis";
 import {
   getNextDevelopmentStep,
+  CAMERA_DEVELOPMENT_SESSION,
   STANDARD_DEVELOPMENT_SESSION,
   type DevelopmentSessionStep,
 } from "../../evaluation/development-session";
+import type { SessionType } from "../../evaluation/recorder";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import type {
   CameraProfile,
@@ -37,11 +39,20 @@ import type {
   UserProfile,
 } from "../../core/types";
 
+// Shows which raw feature(s) tripped the alerting rule (e.g.
+// "faceToShoulderRatio, headShoulderDistanceRatio") rather than the posture
+// scenario name — matchedFeatures reflects only the first matched rule
+// (PostureRuleDetector.update), since that's the one driving state/alert.
+function describeMatchedFeatures(event: DetectionEvent | null): string {
+  if (!event?.matchedFeatures || event.matchedFeatures.length === 0) return "?";
+  return event.matchedFeatures.join(", ");
+}
+
 // How long a Calibration/기준 자세 업데이트 click collects frames before
 // buildUserProfile() runs. No camera-state validator exists yet (that's
 // B's Day3 CameraProfile work), so cameraState is logged as "UNKNOWN"
 // rather than a real assessment.
-const CALIBRATION_DURATION_MS = 3000;
+const CALIBRATION_DURATION_MS = 5000;
 const MIN_CALIBRATION_FRAMES = 10;
 const AUTOMATED_SESSION_COUNTDOWN_SECONDS = 3;
 
@@ -60,9 +71,18 @@ async function main() {
   canvas.height = 720;
   canvas.className = "camera-canvas";
 
-  const alertBanner = document.createElement("div");
-  alertBanner.className = "alert-banner alert-banner--idle";
-  alertBanner.textContent = "캘리브레이션 후 측정을 시작하세요";
+  const alertBannerRow = document.createElement("div");
+  alertBannerRow.className = "alert-banner-row";
+
+  const v0AlertBanner = document.createElement("div");
+  v0AlertBanner.className = "alert-banner alert-banner--idle";
+  v0AlertBanner.textContent = "V0: 캘리브레이션 후 측정을 시작하세요";
+
+  const v2AlertBanner = document.createElement("div");
+  v2AlertBanner.className = "alert-banner alert-banner--idle";
+  v2AlertBanner.textContent = "V2: 캘리브레이션 후 측정을 시작하세요";
+
+  alertBannerRow.append(v0AlertBanner, v2AlertBanner);
 
   const layout = document.createElement("main");
   layout.className = "app-layout";
@@ -82,6 +102,10 @@ async function main() {
   const automatedSessionButton = document.createElement("button");
   automatedSessionButton.textContent = "자동 Development Session";
   automatedSessionButton.disabled = true;
+  automatedSessionButton.textContent = "Development_Posture_Session";
+  const cameraSessionButton = document.createElement("button");
+  cameraSessionButton.textContent = "Development_Camera_Session";
+  cameraSessionButton.disabled = true;
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
@@ -98,6 +122,15 @@ async function main() {
     { value: "HEAD_TURN", text: "Head turn" },
     { value: "CLOSE_TO_CAMERA", text: "Close to camera" },
     { value: "CAMERA_CHANGE", text: "Camera change" },
+    { value: "HEAD_TILT", text: "Head tilt" },
+    { value: "CHIN_REST", text: "Chin rest" },
+    { value: "HEAD_BACK", text: "Head back" },
+    { value: "SHOULDER_ASYMMETRY", text: "Shoulder asymmetry" },
+    { value: "ROUNDED_SHOULDERS", text: "Rounded shoulders" },
+    { value: "BACKWARD_LEAN", text: "Backward lean" },
+    { value: "CHIN_TUCK", text: "Chin tuck" },
+    { value: "TORSO_TWIST", text: "Torso twist" },
+    { value: "SHOULDERS_ONLY_TWIST", text: "Shoulders only twist" },
   ];
   for (const scenario of scenarios) {
     const option = document.createElement("option");
@@ -114,6 +147,7 @@ async function main() {
     updateBaselineButton,
     recordButton,
     automatedSessionButton,
+    cameraSessionButton,
     downloadButton,
     scenarioSelect,
     scenarioStartedButton,
@@ -129,7 +163,7 @@ async function main() {
 
   sidePanel.append(controls, sessionInstruction, status);
   layout.append(canvas, sidePanel);
-  app.append(video, layout, alertBanner);
+  app.append(video, layout, alertBannerRow);
   addLayoutStyles();
 
   const ctx = canvas.getContext("2d");
@@ -163,6 +197,7 @@ async function main() {
     stepIndex: number;
     steps: readonly DevelopmentSessionStep[];
   } | null = null;
+  let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
 
   const recorder = new SessionRecorder();
@@ -241,6 +276,7 @@ async function main() {
     v2MadUpdater = new V2MadUpdater(madProfile);
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
+    cameraSessionButton.disabled = false;
   }
 
   calibrateButton.onclick = startCalibration;
@@ -279,29 +315,41 @@ async function main() {
 
   scenarioEndedButton.onclick = endScenario;
 
-  automatedSessionButton.onclick = () => {
+  automatedSessionButton.onclick = () =>
+    toggleAutomatedSession("POSTURE", STANDARD_DEVELOPMENT_SESSION, automatedSessionButton);
+  cameraSessionButton.onclick = () =>
+    toggleAutomatedSession("CAMERA", CAMERA_DEVELOPMENT_SESSION, cameraSessionButton);
+
+  function toggleAutomatedSession(
+    sessionType: SessionType,
+    steps: readonly DevelopmentSessionStep[],
+    button: HTMLButtonElement,
+  ): void {
     if (automatedSession) {
       finishRecording();
       return;
     }
     if (recorder.isRecording()) return;
 
-    beginRecording();
+    beginRecording(sessionType);
+    currentSessionType = sessionType;
+    developmentAnalysisSummary = "";
     automatedSession = {
-      startedAt:
-        performance.now() + AUTOMATED_SESSION_COUNTDOWN_SECONDS * 1000,
+      startedAt: performance.now() + AUTOMATED_SESSION_COUNTDOWN_SECONDS * 1000,
       stepIndex: -1,
-      steps: STANDARD_DEVELOPMENT_SESSION,
+      steps,
     };
+    button.textContent = `${sessionType === "POSTURE" ? "Development_Posture_Session" : "Development_Camera_Session"} (running)`;
     setManualControlsDisabled(true);
-  };
+  }
 
-  function beginRecording(): void {
+  function beginRecording(sessionType: SessionType = "POSTURE"): void {
     if (recorder.isRecording()) return;
 
+    currentSessionType = sessionType;
     recorder.start(
       profile && cameraProfile && profileCreatedAt !== null
-        ? { userProfile: profile, cameraProfile, madProfile, profileCreatedAt }
+        ? { userProfile: profile, cameraProfile, madProfile, profileCreatedAt, sessionType }
         : undefined,
     );
     scenarioLabeler.reset(performance.now());
@@ -309,6 +357,8 @@ async function main() {
     recordButton.textContent = "측정 종료";
     automatedSessionButton.textContent = "자동 세션 중지";
     downloadButton.disabled = true;
+    automatedSessionButton.textContent = "Development_Posture_Session";
+    cameraSessionButton.textContent = "Development_Camera_Session";
     scenarioStartedButton.disabled = false;
     scenarioEndedButton.disabled = false;
   }
@@ -323,12 +373,19 @@ async function main() {
     recordButton.textContent = "측정 시작";
     automatedSessionButton.textContent = "자동 Development Session";
     lastSessionLog = toJSONL(entries);
-    if (wasAutomated) {
+    automatedSessionButton.textContent = "Development_Posture_Session";
+    cameraSessionButton.textContent = "Development_Camera_Session";
+    if (wasAutomated && currentSessionType === "POSTURE") {
       const analysis = analyzeDevelopmentSession(entries);
+      console.info("Development Posture Session analysis", analysis);
+      const thresholdPreview = Object.entries(analysis.recommendedRuleThresholds)
+        .slice(0, 4)
+        .map(([rule, threshold]) => `${rule}=${threshold.toFixed(2)}`)
+        .join(", ");
       developmentAnalysisSummary =
         `development analysis: ${analysis.normalFrameCount} normal frames, ` +
         `${Object.keys(analysis.initialMAD).length} MAD features, ` +
-        `V2 alpha ${analysis.v2.alpha}`;
+        `rule threshold candidates: ${thresholdPreview}`;
     }
     downloadButton.disabled = entries.length === 0;
     scenarioStartedButton.disabled = true;
@@ -384,6 +441,8 @@ async function main() {
     scenarioStartedButton.disabled = disabled || !recorder.isRecording();
     driftOnsetButton.disabled = true;
     scenarioEndedButton.disabled = disabled || !recorder.isRecording();
+    automatedSessionButton.disabled = disabled || !profile;
+    cameraSessionButton.disabled = disabled || !profile;
   }
 
   function processAutomatedSession(timestamp: number): void {
@@ -426,6 +485,11 @@ async function main() {
     }
 
     if (currentStep.action === "SCENARIO_STARTED" && currentStep.label) {
+      if (currentStep.label === "CAMERA_CHANGE") {
+        sessionInstruction.textContent =
+          "Camera change scenario: move the camera as instructed while keeping your posture stable.";
+        return;
+      }
       sessionInstruction.textContent = isDriftScenario(currentStep.label)
         ? `${scenarioName(currentStep.label)} 자세로 천천히 이동하세요. 잠시 후 자세를 유지합니다.`
         : currentStep.label === "TRANSIENT_ACTION"
@@ -453,9 +517,13 @@ async function main() {
     URL.revokeObjectURL(url);
   };
 
-  function setAlertBanner(kind: "idle" | "unknown" | "good" | "bad", message: string): void {
-    alertBanner.className = `alert-banner alert-banner--${kind}`;
-    alertBanner.textContent = message;
+  function setAlertBanner(
+    banner: HTMLDivElement,
+    kind: "idle" | "unknown" | "good" | "bad",
+    message: string,
+  ): void {
+    banner.className = `alert-banner alert-banner--${kind}`;
+    banner.textContent = message;
   }
 
   const loop = () => {
@@ -473,7 +541,8 @@ async function main() {
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
-      setAlertBanner("unknown", describeUnreliableState(quality));
+      setAlertBanner(v0AlertBanner, "unknown", `V0: ${describeUnreliableState(quality)}`);
+      setAlertBanner(v2AlertBanner, "unknown", `V2: ${describeUnreliableState(quality)}`);
       requestAnimationFrame(loop);
       return;
     }
@@ -484,7 +553,8 @@ async function main() {
     previousFeature = feature;
 
     if (!feature) {
-      setAlertBanner("unknown", "UNKNOWN");
+      setAlertBanner(v0AlertBanner, "unknown", "V0: UNKNOWN");
+      setAlertBanner(v2AlertBanner, "unknown", "V2: UNKNOWN");
       requestAnimationFrame(loop);
       return;
     }
@@ -514,10 +584,12 @@ async function main() {
     if (postureDetector) {
       event = postureDetector.update(feature, quality);
       v2Event = v2PostureDetector?.update(feature, quality) ?? null;
-      madProfile = v2MadUpdater.update(feature, {
-        landmarkQuality: quality,
-        matchedPosture: v2Event?.postureType,
-      });
+      if (currentSessionType === "POSTURE") {
+        madProfile = v2MadUpdater.update(feature, {
+          landmarkQuality: quality,
+          matchedPosture: v2Event?.postureType,
+        });
+      }
       v2PostureDetector?.setMADProfile(madProfile);
       if (recorder.isRecording()) {
         recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
@@ -525,18 +597,21 @@ async function main() {
     }
 
     if (!postureDetector) {
-      setAlertBanner("idle", "캘리브레이션 후 측정을 시작하세요");
+      setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
+      setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
     } else {
-      const v0Alert = event?.alert ?? false;
-      const v2Alert = v2Event?.alert ?? false;
-      if (v0Alert || v2Alert) {
-        const sources = [v0Alert ? "V0" : null, v2Alert ? "V2" : null]
-          .filter((source): source is string => source !== null)
-          .join(", ");
-        const reason = v2Event?.reason.join(", ") || event?.reason.join(", ") || "";
-        setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
+      // V0/V2 are judged and shown independently — they can (and are
+      // expected to) disagree, that's the whole point of comparing them.
+      if (event?.alert) {
+        setAlertBanner(v0AlertBanner, "bad", `V0: ${describeMatchedFeatures(event)}`);
       } else {
-        setAlertBanner("good", "정상 자세입니다");
+        setAlertBanner(v0AlertBanner, "good", "V0: 정상 자세입니다");
+      }
+
+      if (v2Event?.alert) {
+        setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(v2Event)}`);
+      } else {
+        setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
     }
 
@@ -578,6 +653,32 @@ async function main() {
       feature.pitchProxy !== undefined ? `pitch proxy: ${feature.pitchProxy.toFixed(3)}` : "",
       getDeltaLine("pitch delta", feature.pitchProxy, profile?.originalCenters.pitchProxy),
       getRatioDeltaLine("bodyScale delta", feature.bodyScale, profile?.originalCenters.bodyScale),
+      // FORWARD_HEAD (posture-rules.ts) needs faceToShoulderRatio score > 2
+      // AND (headShoulderDistanceRatio score > 2 OR pitchProxy score > 1.5).
+      // Showing the actual MAD-normalized scores here so it's visible
+      // exactly which condition is/isn't clearing its threshold live,
+      // rather than guessing at why a real turtle-neck isn't triggering.
+      profile
+        ? `forwardHead scores (need face>2 AND (dist>2 OR pitch>1.5)): face=${formatScore(
+            normalizeFeature(
+              feature.faceToShoulderRatio,
+              profile.originalCenters.faceToShoulderRatio,
+              madProfile.values.faceToShoulderRatio,
+            ),
+          )} dist=${formatScore(
+            normalizeFeature(
+              feature.headShoulderDistanceRatio,
+              profile.originalCenters.headShoulderDistanceRatio,
+              madProfile.values.headShoulderDistanceRatio,
+            ),
+          )} pitch=${formatScore(
+            normalizeFeature(
+              feature.pitchProxy,
+              profile.originalCenters.pitchProxy,
+              madProfile.values.pitchProxy,
+            ),
+          )}`
+        : "",
       `calibrated: ${profile ? "yes" : "no"}`,
       calibrationFrames ? "calibrating..." : "",
       calibrationMessage,
@@ -605,6 +706,10 @@ async function main() {
   };
 
   requestAnimationFrame(loop);
+}
+
+function formatScore(score: number | undefined): string {
+  return score === undefined ? "?" : score.toFixed(2);
 }
 
 function getDeltaLine(
@@ -724,21 +829,25 @@ function addLayoutStyles(): void {
       }
     }
 
-    .alert-banner {
+    .alert-banner-row {
       position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
       z-index: 1000;
+      display: flex;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .alert-banner {
       box-sizing: border-box;
-      width: 100%;
+      flex: 1 1 50%;
       padding: 18px 24px;
       text-align: center;
       font-size: 18px;
       font-weight: 700;
       letter-spacing: 0.01em;
       color: #ffffff;
-      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
       transition: background-color 150ms ease;
     }
 
@@ -775,7 +884,16 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "RIGHT_LEAN" ||
     label === "SIDE_SHIFT" ||
     label === "HEAD_TURN" ||
-    label === "CLOSE_TO_CAMERA";
+    label === "CLOSE_TO_CAMERA" ||
+    label === "HEAD_TILT" ||
+    label === "CHIN_REST" ||
+    label === "HEAD_BACK" ||
+    label === "SHOULDER_ASYMMETRY" ||
+    label === "ROUNDED_SHOULDERS" ||
+    label === "BACKWARD_LEAN" ||
+    label === "CHIN_TUCK" ||
+    label === "TORSO_TWIST" ||
+    label === "SHOULDERS_ONLY_TWIST";
 }
 
 function scenarioName(label: ScenarioLabel["label"]): string {
