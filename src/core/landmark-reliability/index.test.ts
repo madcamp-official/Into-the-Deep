@@ -68,6 +68,35 @@ describe("assessLandmarkQuality", () => {
     expect(quality.reliable).toBe(true);
   });
 
+  it("reports landmarkCoverage 1 and occlusionRate 0 when every tracked landmark is visible", () => {
+    const quality = assessLandmarkQuality(createLandmarks(), 0);
+
+    expect(quality.landmarkCoverage).toBe(1);
+    expect(quality.occlusionRate).toBe(0);
+  });
+
+  it("reports landmarkCoverage 0 and occlusionRate 0 when no one is in frame", () => {
+    const quality = assessLandmarkQuality(undefined, 0);
+
+    expect(quality.landmarkCoverage).toBe(0);
+    expect(quality.occlusionRate).toBe(0);
+  });
+
+  it("lowers landmarkCoverage and raises occlusionRate for landmarks MediaPipe reports but doesn't trust", () => {
+    // Both ears occluded (present in the array, but below confidence) —
+    // 2 of the 9 tracked landmarks. MediaPipe still fills in the array
+    // entries, so this is occlusion, not absence.
+    const landmarks = createLandmarks({
+      leftEar: point(0.45, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+      rightEar: point(0.55, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+    });
+
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.landmarkCoverage).toBeCloseTo(7 / 9, 10);
+    expect(quality.occlusionRate).toBeCloseTo(2 / 9, 10);
+  });
+
   it("reports earsReliable false when one ear's visibility is below threshold, without affecting the overall reliable/eyesReliable flags", () => {
     const landmarks = createLandmarks({
       leftEar: point(0.45, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),

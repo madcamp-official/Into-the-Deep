@@ -1,9 +1,14 @@
 import { startWebcam } from "../camera-adapter/webcam";
-import { createPoseLandmarker, detectPoseForVideoFrame } from "../camera-adapter/pose-landmarker";
+import {
+  countPersons,
+  createPoseLandmarker,
+  detectPoseForVideoFrame,
+} from "../camera-adapter/pose-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
 import {
   buildCameraProfile,
+  computeCameraDelta,
   toCameraRawFeature,
 } from "../../core/camera-profile";
 import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
@@ -440,6 +445,7 @@ async function main() {
     updateSessionInstruction(timestamp);
     const result = detectPoseForVideoFrame(landmarker, video, timestamp);
     const landmarks = result.landmarks[0];
+    const personCount = countPersons(result);
 
     drawVideoFrame(ctx, video, canvas.width, canvas.height);
 
@@ -465,6 +471,10 @@ async function main() {
     }
 
     const cameraRawFeature = toCameraRawFeature(landmarks, timestamp);
+    const cameraDelta =
+      cameraRawFeature && cameraProfile
+        ? computeCameraDelta(cameraRawFeature, cameraProfile)
+        : null;
 
     if (calibrationFrames && calibrationCameraFrames) {
       calibrationFrames.push(feature);
@@ -513,17 +523,18 @@ async function main() {
       cameraProfile
         ? "camera profile: saved (assessment pending)"
         : "camera profile: not calibrated",
-      getRatioDeltaLine(
-        "camera shoulder-width delta",
-        cameraRawFeature?.shoulderWidth,
-        cameraProfile?.shoulderWidth,
-      ),
-      getDeltaLine(
-        "camera face-center-x delta",
-        cameraRawFeature?.faceCenterX,
-        cameraProfile?.faceCenterX,
-      ),
+      cameraDelta
+        ? `camera scale delta: ${(cameraDelta.globalScaleDelta * 100).toFixed(1)}%`
+        : "",
+      cameraDelta ? `camera translation X: ${cameraDelta.globalTranslationX.toFixed(3)}` : "",
+      cameraDelta ? `camera translation Y: ${cameraDelta.globalTranslationY.toFixed(3)}` : "",
+      cameraDelta ? `corrected yaw: ${cameraDelta.correctedYaw.toFixed(3)}` : "",
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
+      `landmark coverage: ${(quality.landmarkCoverage * 100).toFixed(0)}%`,
+      quality.occlusionRate > 0
+        ? `occlusion rate: ${(quality.occlusionRate * 100).toFixed(0)}%`
+        : "",
+      personCount > 1 ? `⚠ person count: ${personCount}` : "",
       feature.headXRatio !== undefined ? `head X ratio: ${feature.headXRatio.toFixed(3)}` : "",
       feature.headYRatio !== undefined ? `head Y ratio: ${feature.headYRatio.toFixed(3)}` : "",
       feature.headShoulderDistanceRatio !== undefined

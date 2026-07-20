@@ -52,6 +52,17 @@ export interface CameraProfile {
   pitchProxy: number;
 }
 
+// Raw camera-relative deltas (A's job — computed straight from
+// CameraRawFeature vs the stored CameraProfile), not yet a VALID/ADJUSTED/
+// RECALIBRATION_REQUIRED judgment. That judgment (CameraAssessment) is B's.
+export interface CameraDelta {
+  timestamp: number;
+  globalScaleDelta: number;
+  globalTranslationX: number;
+  globalTranslationY: number;
+  correctedYaw: number;
+}
+
 export interface CameraAssessment {
   timestamp: number;
   state: "VALID" | "ADJUSTED" | "RECALIBRATION_REQUIRED";
@@ -102,6 +113,8 @@ export interface LandmarkQuality {
   eyesReliable: boolean;
   earsReliable: boolean;
   wristsReliable: boolean;
+  landmarkCoverage: number;
+  occlusionRate: number;
 }
 
 export interface ScenarioLabel {

@@ -20,6 +20,21 @@ export const RELIABILITY_THRESHOLDS = {
   frameMargin: 0.02,
 };
 
+// Landmarks tracked for landmarkCoverage/occlusionRate (feature_discussion):
+// the full set A's features draw on, beyond just the required nose/
+// shoulders.
+const TRACKED_LANDMARKS = [
+  LANDMARK_INDEX.nose,
+  LANDMARK_INDEX.leftEye,
+  LANDMARK_INDEX.rightEye,
+  LANDMARK_INDEX.leftEar,
+  LANDMARK_INDEX.rightEar,
+  LANDMARK_INDEX.leftShoulder,
+  LANDMARK_INDEX.rightShoulder,
+  LANDMARK_INDEX.leftWrist,
+  LANDMARK_INDEX.rightWrist,
+] as const;
+
 // Day2 draft of the Reliability Filter (plan.md section 8). Frames that
 // fail this check should be treated as UNKNOWN by downstream detectors,
 // not as BAD posture. Sudden landmark jumps are a Day3 concern once we
@@ -50,6 +65,8 @@ export function assessLandmarkQuality(
       eyesReliable: false,
       earsReliable: false,
       wristsReliable: false,
+      landmarkCoverage: 0,
+      occlusionRate: 0,
     };
   }
 
@@ -73,6 +90,25 @@ export function assessLandmarkQuality(
   const wristsReliable = isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
     isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
 
+  // landmarkCoverage: how much of the tracked landmark set MediaPipe both
+  // reports *and* trusts (visibility above threshold) this frame.
+  // occlusionRate: of the landmarks MediaPipe reports at all, how many are
+  // present but not trustworthy (hidden by hair/hand/turned away) — MediaPipe
+  // always fills every index once a person is detected, so "present" alone
+  // doesn't mean visible.
+  const trackedPoints = TRACKED_LANDMARKS.map((index) => landmarks?.[index]);
+  const presentPoints = trackedPoints.filter(
+    (point): point is NormalizedLandmark => point !== undefined,
+  );
+  const visiblePoints = presentPoints.filter(
+    (point) => point.visibility >= RELIABILITY_THRESHOLDS.minConfidence,
+  );
+  const landmarkCoverage = visiblePoints.length / TRACKED_LANDMARKS.length;
+  const occlusionRate =
+    presentPoints.length > 0
+      ? (presentPoints.length - visiblePoints.length) / presentPoints.length
+      : 0;
+
   return {
     timestamp,
     personPresent,
@@ -83,6 +119,8 @@ export function assessLandmarkQuality(
     eyesReliable,
     earsReliable,
     wristsReliable,
+    landmarkCoverage,
+    occlusionRate,
   };
 }
 
