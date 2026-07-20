@@ -56,10 +56,28 @@ V2: 사용자별 중심값 + MAD, 안정적인 정상 구간에서 업데이트
 5. 시간 판정과 알림 규칙 -> C가 결정
 
 - 자세 rule이 몇 초 지속되어야 alert인지
+    -> 2단계 dwell timer로 결정한다. 전역 motionEnergy 게이트(feature_discussion 0번)를 통과한 프레임에서 자세 rule이 매칭되는 즉시 `DRIFT_SUSPECTED`로 진입하고, 같은 rule이 누적 2.0초 유지되면 `SUSTAINED_DRIFT`, 누적 3.0초(= rule 매칭 시작 후 총 3초) 유지되면 `ALERTED`(`alert: true`)로 전환한다. 공식 지표인 "drift 시작 후 10초 이내 탐지 성공"에 7초 여유를 두기 위한 값이며, development session에서 자세별 τ와 함께 재조정하되 상한은 official metric을 지키기 위해 8초를 넘기지 않는다.
 - 일시적인 움직임을 언제까지 허용할지
+    -> 1차 방어선은 feature_discussion 0번 전역 motionEnergy 게이트(해당 프레임의 판정 자체를 hold)이고, 2차 방어선은 위 dwell timer다. motionEnergy가 낮아도 rule 매칭이 2.0초(DRIFT_SUSPECTED→SUSTAINED_DRIFT 임계값) 미만으로 끝나면 승격되지 않고 그대로 소멸한다. 14~17번(물 마시기, 스트레칭 등) 같은 일시 행동은 이 두 겹의 방어선으로 걸러진다.
 - 자세가 정상으로 돌아왔을 때 `RECOVERED`로 바뀌는 조건
+    -> `ALERTED` 상태에서 해당 rule이 더 이상 매칭되지 않고 동시에 `motionEnergy`가 τ_motion 미만인 상태가 끊김 없이 1.5초 유지되면 `RECOVERED`로 전환한다(한 tick 유지 후 `STABLE`로 떨어짐). 이 1.5초 창 안에서 rule이 다시 매칭되면 recovery 타이머는 0으로 리셋한다 — recovery는 아래 cooldown과 달리 유예 없이 깨끗하게 유지되어야 재알림 로직과 충돌하지 않는다.
 - 재알림 cooldown
+    -> `RECOVERED` 이후 같은 `postureType`이 다시 매칭되어도 마지막 `ALERTED` 시각 기준 8초가 지나기 전에는 `alert: true`를 다시 세우지 않는다(내부적으로 `DRIFT_SUSPECTED`/`SUSTAINED_DRIFT` 누적은 계속하되 `ALERTED` 승격만 억제). cooldown은 `postureType`별로 독립적으로 추적한다. 8초로 잡은 이유: Test Session 시나리오(같은 자세 15초 유지 × 3회, 이벤트 사이 15~20초 정상 구간)에서 같은 자세의 반복 이벤트가 cooldown에 묻혀 탐지율을 깎지 않도록, 이벤트 간 최소 간격(15초)보다 확실히 짧게 잡는다.
 - `UNKNOWN` 상태가 alert 지속시간에 포함되는지
+    -> 포함하지 않는다. `UNKNOWN`(landmark 불안정·프레임 이탈) 프레임과 `cameraState`가 `RECALIBRATION_REQUIRED`인 프레임은 진행 중인 dwell timer를 hold한다(누적도 하지 않고 리셋도 하지 않음). 다만 hold가 4초를 넘게 이어지면(예: 자리 비움) 그 시점에 dwell timer를 0으로 리셋해서, 오래전의 부분 매칭이 복귀 후 갑자기 alert로 이어지지 않게 한다. 전역 motionEnergy 게이트(0번)로 인한 hold도 동일한 정책(hold, 4초 초과 시 리셋)을 적용한다 — feature_discussion 0번 미해결 항목이 요구한 "hold 상태가 need_discussion 5번 카운트에 어떻게 반영되는지"에 대한 답이다. cooldown 타이머는 이 hold의 영향을 받지 않고 wall-clock 기준으로 계속 진행된다(재알림 억제는 dwell 누적이 아니라 실제 경과 시간이 기준이므로).
+
+**기본값 요약 (development session에서 재검증)**
+
+| 상수 | 기본값 | 의미 |
+| --- | --- | --- |
+| `T_suspect_to_sustain` | 2.0초 | rule 매칭 시작 → `SUSTAINED_DRIFT` |
+| `T_sustain_to_alert` | +1.0초 (누적 3.0초) | `SUSTAINED_DRIFT` → `ALERTED` |
+| `T_alert_ceiling` | 8.0초 | official metric(10초 이내 탐지) 보호를 위한 상한 |
+| `T_recover` | 1.5초 | `ALERTED` → `RECOVERED` (연속 조건, 리셋형) |
+| `T_cooldown` | 8.0초 | 같은 `postureType` 재알림 억제 (wall-clock, `ALERTED` 시각 기준) |
+| `T_hold_reset` | 4.0초 | `UNKNOWN`/`RECALIBRATION_REQUIRED`/motionEnergy 게이트로 인한 hold가 이보다 길면 dwell timer 리셋 |
+
+`SLOW_DRIFT_WATCH`(서서히 무너지는 자세, plan.md 13절)는 이번 5번 결정에서는 다루지 않는다. 필요해지면 위와 동일한 dwell timer 구조에 더 긴 window를 적용해 `DRIFT_SUSPECTED` 앞 단계로 추가하는 방향으로 확장한다.
 
 6. 환경 변화 처리
 
