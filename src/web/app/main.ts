@@ -24,9 +24,11 @@ import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
 import { analyzeDevelopmentSession } from "../../evaluation/development-analysis";
 import {
   getNextDevelopmentStep,
+  CAMERA_DEVELOPMENT_SESSION,
   STANDARD_DEVELOPMENT_SESSION,
   type DevelopmentSessionStep,
 } from "../../evaluation/development-session";
+import type { SessionType } from "../../evaluation/recorder";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import type {
   CameraProfile,
@@ -41,7 +43,7 @@ import type {
 // buildUserProfile() runs. No camera-state validator exists yet (that's
 // B's Day3 CameraProfile work), so cameraState is logged as "UNKNOWN"
 // rather than a real assessment.
-const CALIBRATION_DURATION_MS = 3000;
+const CALIBRATION_DURATION_MS = 5000;
 const MIN_CALIBRATION_FRAMES = 10;
 const AUTOMATED_SESSION_COUNTDOWN_SECONDS = 3;
 
@@ -82,6 +84,10 @@ async function main() {
   const automatedSessionButton = document.createElement("button");
   automatedSessionButton.textContent = "자동 Development Session";
   automatedSessionButton.disabled = true;
+  automatedSessionButton.textContent = "Development_Posture_Session";
+  const cameraSessionButton = document.createElement("button");
+  cameraSessionButton.textContent = "Development_Camera_Session";
+  cameraSessionButton.disabled = true;
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
@@ -98,6 +104,15 @@ async function main() {
     { value: "HEAD_TURN", text: "Head turn" },
     { value: "CLOSE_TO_CAMERA", text: "Close to camera" },
     { value: "CAMERA_CHANGE", text: "Camera change" },
+    { value: "HEAD_TILT", text: "Head tilt" },
+    { value: "CHIN_REST", text: "Chin rest" },
+    { value: "HEAD_BACK", text: "Head back" },
+    { value: "SHOULDER_ASYMMETRY", text: "Shoulder asymmetry" },
+    { value: "ROUNDED_SHOULDERS", text: "Rounded shoulders" },
+    { value: "BACKWARD_LEAN", text: "Backward lean" },
+    { value: "CHIN_TUCK", text: "Chin tuck" },
+    { value: "TORSO_TWIST", text: "Torso twist" },
+    { value: "SHOULDERS_ONLY_TWIST", text: "Shoulders only twist" },
   ];
   for (const scenario of scenarios) {
     const option = document.createElement("option");
@@ -114,6 +129,7 @@ async function main() {
     updateBaselineButton,
     recordButton,
     automatedSessionButton,
+    cameraSessionButton,
     downloadButton,
     scenarioSelect,
     scenarioStartedButton,
@@ -163,6 +179,7 @@ async function main() {
     stepIndex: number;
     steps: readonly DevelopmentSessionStep[];
   } | null = null;
+  let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
 
   const recorder = new SessionRecorder();
@@ -241,6 +258,7 @@ async function main() {
     v2MadUpdater = new V2MadUpdater(madProfile);
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
+    cameraSessionButton.disabled = false;
   }
 
   calibrateButton.onclick = startCalibration;
@@ -279,29 +297,41 @@ async function main() {
 
   scenarioEndedButton.onclick = endScenario;
 
-  automatedSessionButton.onclick = () => {
+  automatedSessionButton.onclick = () =>
+    toggleAutomatedSession("POSTURE", STANDARD_DEVELOPMENT_SESSION, automatedSessionButton);
+  cameraSessionButton.onclick = () =>
+    toggleAutomatedSession("CAMERA", CAMERA_DEVELOPMENT_SESSION, cameraSessionButton);
+
+  function toggleAutomatedSession(
+    sessionType: SessionType,
+    steps: readonly DevelopmentSessionStep[],
+    button: HTMLButtonElement,
+  ): void {
     if (automatedSession) {
       finishRecording();
       return;
     }
     if (recorder.isRecording()) return;
 
-    beginRecording();
+    beginRecording(sessionType);
+    currentSessionType = sessionType;
+    developmentAnalysisSummary = "";
     automatedSession = {
-      startedAt:
-        performance.now() + AUTOMATED_SESSION_COUNTDOWN_SECONDS * 1000,
+      startedAt: performance.now() + AUTOMATED_SESSION_COUNTDOWN_SECONDS * 1000,
       stepIndex: -1,
-      steps: STANDARD_DEVELOPMENT_SESSION,
+      steps,
     };
+    button.textContent = `${sessionType === "POSTURE" ? "Development_Posture_Session" : "Development_Camera_Session"} (running)`;
     setManualControlsDisabled(true);
-  };
+  }
 
-  function beginRecording(): void {
+  function beginRecording(sessionType: SessionType = "POSTURE"): void {
     if (recorder.isRecording()) return;
 
+    currentSessionType = sessionType;
     recorder.start(
       profile && cameraProfile && profileCreatedAt !== null
-        ? { userProfile: profile, cameraProfile, madProfile, profileCreatedAt }
+        ? { userProfile: profile, cameraProfile, madProfile, profileCreatedAt, sessionType }
         : undefined,
     );
     scenarioLabeler.reset(performance.now());
@@ -309,6 +339,8 @@ async function main() {
     recordButton.textContent = "측정 종료";
     automatedSessionButton.textContent = "자동 세션 중지";
     downloadButton.disabled = true;
+    automatedSessionButton.textContent = "Development_Posture_Session";
+    cameraSessionButton.textContent = "Development_Camera_Session";
     scenarioStartedButton.disabled = false;
     scenarioEndedButton.disabled = false;
   }
@@ -323,12 +355,19 @@ async function main() {
     recordButton.textContent = "측정 시작";
     automatedSessionButton.textContent = "자동 Development Session";
     lastSessionLog = toJSONL(entries);
-    if (wasAutomated) {
+    automatedSessionButton.textContent = "Development_Posture_Session";
+    cameraSessionButton.textContent = "Development_Camera_Session";
+    if (wasAutomated && currentSessionType === "POSTURE") {
       const analysis = analyzeDevelopmentSession(entries);
+      console.info("Development Posture Session analysis", analysis);
+      const thresholdPreview = Object.entries(analysis.recommendedRuleThresholds)
+        .slice(0, 4)
+        .map(([rule, threshold]) => `${rule}=${threshold.toFixed(2)}`)
+        .join(", ");
       developmentAnalysisSummary =
         `development analysis: ${analysis.normalFrameCount} normal frames, ` +
         `${Object.keys(analysis.initialMAD).length} MAD features, ` +
-        `V2 alpha ${analysis.v2.alpha}`;
+        `rule threshold candidates: ${thresholdPreview}`;
     }
     downloadButton.disabled = entries.length === 0;
     scenarioStartedButton.disabled = true;
@@ -384,6 +423,8 @@ async function main() {
     scenarioStartedButton.disabled = disabled || !recorder.isRecording();
     driftOnsetButton.disabled = true;
     scenarioEndedButton.disabled = disabled || !recorder.isRecording();
+    automatedSessionButton.disabled = disabled || !profile;
+    cameraSessionButton.disabled = disabled || !profile;
   }
 
   function processAutomatedSession(timestamp: number): void {
@@ -426,6 +467,11 @@ async function main() {
     }
 
     if (currentStep.action === "SCENARIO_STARTED" && currentStep.label) {
+      if (currentStep.label === "CAMERA_CHANGE") {
+        sessionInstruction.textContent =
+          "Camera change scenario: move the camera as instructed while keeping your posture stable.";
+        return;
+      }
       sessionInstruction.textContent = isDriftScenario(currentStep.label)
         ? `${scenarioName(currentStep.label)} 자세로 천천히 이동하세요. 잠시 후 자세를 유지합니다.`
         : currentStep.label === "TRANSIENT_ACTION"
@@ -514,10 +560,12 @@ async function main() {
     if (postureDetector) {
       event = postureDetector.update(feature, quality);
       v2Event = v2PostureDetector?.update(feature, quality) ?? null;
-      madProfile = v2MadUpdater.update(feature, {
-        landmarkQuality: quality,
-        matchedPosture: v2Event?.postureType,
-      });
+      if (currentSessionType === "POSTURE") {
+        madProfile = v2MadUpdater.update(feature, {
+          landmarkQuality: quality,
+          matchedPosture: v2Event?.postureType,
+        });
+      }
       v2PostureDetector?.setMADProfile(madProfile);
       if (recorder.isRecording()) {
         recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
@@ -775,7 +823,16 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "RIGHT_LEAN" ||
     label === "SIDE_SHIFT" ||
     label === "HEAD_TURN" ||
-    label === "CLOSE_TO_CAMERA";
+    label === "CLOSE_TO_CAMERA" ||
+    label === "HEAD_TILT" ||
+    label === "CHIN_REST" ||
+    label === "HEAD_BACK" ||
+    label === "SHOULDER_ASYMMETRY" ||
+    label === "ROUNDED_SHOULDERS" ||
+    label === "BACKWARD_LEAN" ||
+    label === "CHIN_TUCK" ||
+    label === "TORSO_TWIST" ||
+    label === "SHOULDERS_ONLY_TWIST";
 }
 
 function scenarioName(label: ScenarioLabel["label"]): string {

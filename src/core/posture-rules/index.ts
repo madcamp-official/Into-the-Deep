@@ -99,6 +99,27 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     reason: "head is tilted backward without a matching torso lean",
   },
   {
+    postureType: "CHIN_TUCK",
+    requiredLandmarks: EYES,
+    required: [
+      { feature: "faceToShoulderRatioDelta", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+    ],
+    anyOf: [{ feature: "pitchProxy", operator: "LT", threshold: -1.5, reference: "CALIBRATION" }],
+    supporting: ["headXRatio"],
+    reason: "chin is pulled backward relative to the calibrated head position",
+  },
+  {
+    postureType: "TORSO_TWIST",
+    requiredLandmarks: CORE,
+    required: [
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+    ],
+    supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
+    reason: "torso direction differs from the calibrated forward direction",
+  },
+  {
     postureType: "SHOULDERS_ONLY_TWIST",
     requiredLandmarks: CORE,
     required: [

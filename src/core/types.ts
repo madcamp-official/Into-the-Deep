@@ -270,5 +270,14 @@ export interface ScenarioLabel {
     | "SIDE_SHIFT"
     | "HEAD_TURN"
     | "CLOSE_TO_CAMERA"
-    | "CAMERA_CHANGE";
+    | "CAMERA_CHANGE"
+    | "HEAD_TILT"
+    | "CHIN_REST"
+    | "HEAD_BACK"
+    | "SHOULDER_ASYMMETRY"
+    | "ROUNDED_SHOULDERS"
+    | "BACKWARD_LEAN"
+    | "CHIN_TUCK"
+    | "TORSO_TWIST"
+    | "SHOULDERS_ONLY_TWIST";
 }
