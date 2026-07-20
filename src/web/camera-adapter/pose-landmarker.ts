@@ -42,6 +42,11 @@ export const LANDMARK_INDEX = {
   rightEar: 8,
   leftShoulder: 11,
   rightShoulder: 12,
+  // Elbows are only used for skeleton-overlay drawing continuity
+  // (shoulder->elbow->wrist), not for any feature computation — see
+  // need_discussion's "팔꿈치 없애기" decision on the feature side.
+  leftElbow: 13,
+  rightElbow: 14,
   leftWrist: 15,
   rightWrist: 16,
   leftHip: 23,

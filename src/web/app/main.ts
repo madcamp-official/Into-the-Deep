@@ -56,6 +56,10 @@ async function main() {
   canvas.height = 720;
   canvas.className = "camera-canvas";
 
+  const alertBanner = document.createElement("div");
+  alertBanner.className = "alert-banner alert-banner--idle";
+  alertBanner.textContent = "캘리브레이션 후 측정을 시작하세요";
+
   const layout = document.createElement("main");
   layout.className = "app-layout";
 
@@ -121,7 +125,7 @@ async function main() {
 
   sidePanel.append(controls, sessionInstruction, status);
   layout.append(canvas, sidePanel);
-  app.append(video, layout);
+  app.append(video, layout, alertBanner);
   addLayoutStyles();
 
   const ctx = canvas.getContext("2d");
@@ -425,6 +429,11 @@ async function main() {
     URL.revokeObjectURL(url);
   };
 
+  function setAlertBanner(kind: "idle" | "unknown" | "good" | "bad", message: string): void {
+    alertBanner.className = `alert-banner alert-banner--${kind}`;
+    alertBanner.textContent = message;
+  }
+
   const loop = () => {
     const timestamp = performance.now();
     processAutomatedSession(timestamp);
@@ -439,6 +448,7 @@ async function main() {
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
+      setAlertBanner("unknown", describeUnreliableState(quality));
       requestAnimationFrame(loop);
       return;
     }
@@ -449,6 +459,7 @@ async function main() {
     previousFeature = feature;
 
     if (!feature) {
+      setAlertBanner("unknown", "UNKNOWN");
       requestAnimationFrame(loop);
       return;
     }
@@ -476,6 +487,25 @@ async function main() {
       v1Result = v1Detector?.update(feature) ?? null;
       if (recorder.isRecording()) {
         recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
+      }
+    }
+
+    if (!detector) {
+      setAlertBanner("idle", "캘리브레이션 후 측정을 시작하세요");
+    } else {
+      const v0Alert = event?.alert ?? false;
+      const v1Alert = v1Result?.event.alert ?? false;
+      if (v0Alert || v1Alert) {
+        const sources = [v0Alert ? "V0" : null, v1Alert ? "V2" : null]
+          .filter((source): source is string => source !== null)
+          .join(", ");
+        const reason =
+          v1Result && v1Result.observation.dominantFeatures.length > 0
+            ? v1Result.observation.dominantFeatures.join(", ")
+            : (event?.reason.join(", ") ?? "");
+        setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
+      } else {
+        setAlertBanner("good", "정상 자세입니다");
       }
     }
 
@@ -579,6 +609,7 @@ function addLayoutStyles(): void {
       max-width: 1440px;
       margin: 0 auto;
       padding: 24px;
+      padding-bottom: 96px;
     }
 
     .app-layout {
@@ -657,6 +688,40 @@ function addLayoutStyles(): void {
         width: 100%;
         min-width: 0;
       }
+    }
+
+    .alert-banner {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      box-sizing: border-box;
+      width: 100%;
+      padding: 18px 24px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #ffffff;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+      transition: background-color 150ms ease;
+    }
+
+    .alert-banner--idle {
+      background: #6b7280;
+    }
+
+    .alert-banner--unknown {
+      background: #b45309;
+    }
+
+    .alert-banner--good {
+      background: #16a34a;
+    }
+
+    .alert-banner--bad {
+      background: #dc2626;
     }
   `;
   document.head.append(style);
