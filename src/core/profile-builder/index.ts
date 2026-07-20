@@ -16,6 +16,8 @@ const PROFILE_FEATURES = [
   "headXRatio",
   "headShoulderDistanceRatio",
   "bodyCompressionRatio",
+  "headRoll",
+  "relativeShoulderScale",
   // Needed as calibration baselines for posture-rule-detector's generic
   // CALIBRATION-reference normalization (FORWARD_LEAN, BACKWARD_LEAN,
   // HEAD_TURN, HEAD_BACK, TORSO_TWIST rules).

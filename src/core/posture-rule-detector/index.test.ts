@@ -31,6 +31,36 @@ describe("PostureRuleDetector", () => {
     });
   });
 
+  it("selects the candidate with the stronger normalized evidence", () => {
+    const profile = createProfile();
+    const rules: PostureRule[] = [
+      {
+        postureType: "FORWARD_HEAD",
+        requiredLandmarks: [],
+        required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head forward",
+      },
+      {
+        postureType: "HEAD_TILT",
+        requiredLandmarks: [],
+        required: [{ feature: "shoulderTilt", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head tilted",
+      },
+    ];
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({
+      values: { headXRatio: 0.1, shoulderTilt: 1 },
+    }), { rules });
+
+    const event = detector.update(
+      createPostureFrame({ headXRatio: 0.5, shoulderTilt: 3 }),
+    );
+
+    expect(event.postureType).toBe("FORWARD_HEAD");
+    expect(event.postureCandidates?.[0].score).toBeGreaterThan(event.postureCandidates?.[1].score ?? 0);
+  });
+
   it("does not call a small yaw-only fluctuation a head turn", () => {
     const profile = createPostureProfile();
     const matches = evaluatePostureRules(
@@ -58,8 +88,8 @@ describe("PostureRuleDetector", () => {
 
 function createProfile(): UserProfile {
   return {
-    originalCenters: { headXRatio: 0.1 },
-    adaptiveCenters: { headXRatio: 0.1 },
+    originalCenters: { headXRatio: 0.1, shoulderTilt: 0 },
+    adaptiveCenters: { headXRatio: 0.1, shoulderTilt: 0 },
     featureDeviations: {},
     calibrationDuration: 5000,
     validFrameCount: 100,

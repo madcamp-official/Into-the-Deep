@@ -219,6 +219,9 @@ export interface PostureRule {
   anyOf?: PostureRuleCondition[];
   supporting: PostureFeatureName[];
   reason: string;
+  // Lower values are useful for generic rules that commonly overlap with a
+  // more specific posture, such as HEAD_TURN.
+  priority?: number;
 }
 
 export interface DriftObservation {
@@ -235,6 +238,7 @@ export interface DetectionEvent {
   reason: string[];
   postureType?: PostureType;
   matchedFeatures?: PostureFeatureName[];
+  postureCandidates?: Array<{ postureType: PostureType; score: number }>;
   cameraState?: CameraState;
   cameraCheckRequired?: boolean;
   qualityReasons?: string[];

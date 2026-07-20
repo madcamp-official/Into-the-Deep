@@ -85,6 +85,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["headXRatio", "yawProxy"],
     reason: "head direction differs from the calibrated direction",
+    priority: 0.8,
   },
   {
     postureType: "HEAD_TILT",
