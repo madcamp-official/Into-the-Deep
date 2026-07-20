@@ -31,6 +31,14 @@ export type PostureType =
   | "TORSO_TWIST"
   | "SHOULDERS_ONLY_TWIST";
 
+export type MovementContext =
+  | "NONE"
+  | "CAMERA_MOVEMENT"
+  | "ARMREST_LEAN"
+  | "SIDE_SHIFT"
+  | "CHAIR_MOVEMENT"
+  | "UNKNOWN";
+
 export type PostureFeatureName =
   | "shoulderTilt"
   | "headXOffset"
@@ -125,6 +133,7 @@ export interface FrameFeature {
   cameraPitchProxy?: number;
   backgroundMotion?: number;
   backgroundTransformConfidence?: number;
+  movementContext?: MovementContext;
   landmarkCoverage?: number;
   landmarkConfidence?: number;
 }
@@ -210,6 +219,9 @@ export interface PostureRule {
   anyOf?: PostureRuleCondition[];
   supporting: PostureFeatureName[];
   reason: string;
+  // Lower values are useful for generic rules that commonly overlap with a
+  // more specific posture, such as HEAD_TURN.
+  priority?: number;
 }
 
 export interface DriftObservation {
@@ -226,6 +238,7 @@ export interface DetectionEvent {
   reason: string[];
   postureType?: PostureType;
   matchedFeatures?: PostureFeatureName[];
+  postureCandidates?: Array<{ postureType: PostureType; score: number }>;
   cameraState?: CameraState;
   cameraCheckRequired?: boolean;
   qualityReasons?: string[];

@@ -72,25 +72,20 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TURN",
     requiredLandmarks: EARS,
-    // yawProxy (nose x-asymmetry between the ears) isn't roll-clean: tilting
-    // the head sideways swings the nose off the roll axis, so it moves in x
-    // too and yawProxy reacts even with zero actual turning. Confirmed
-    // live: a pure head tilt was showing up as HEAD_TURN. Excluding large
-    // headRoll here stops a tilt from also reading as a turn — same
-    // threshold as HEAD_TILT's own gate, so whichever HEAD_TILT would catch
-    // is excluded here instead of both firing and HEAD_TURN winning on
-    // array order (PostureRuleDetector takes matches[0], not the largest
-    // deviation, so ordering currently decides ties).
-    required: [{ feature: "headRoll", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" }],
-    // Raised from 2 -> 3/4: wanted this less twitchy than FORWARD_HEAD —
-    // needs a clearly bigger head turn before firing, not just glancing
-    // aside. Candidate value, not yet tuned against a development session.
+    // yawProxy alone is noisy when the head is partially occluded or the
+    // camera is slightly off-axis. A head tilt can also move the nose between
+    // the ears, so require horizontal displacement and exclude a tilted head.
+    required: [
+      { feature: "headXRatio", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
+      { feature: "headRoll", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" },
+    ],
     anyOf: [
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+      { feature: "yawProxy", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
     ],
-    supporting: ["headXRatio"],
+    supporting: ["headXRatio", "yawProxy"],
     reason: "head direction differs from the calibrated direction",
+    priority: 0.8,
   },
   {
     postureType: "HEAD_TILT",

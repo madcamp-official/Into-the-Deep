@@ -16,6 +16,7 @@ import { buildUserProfile } from "../../core/profile-builder";
 import { createInitialMADProfile, normalizeFeature } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
+import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
   toJSONL,
@@ -30,6 +31,10 @@ import {
 } from "../../evaluation/development-session";
 import type { SessionType } from "../../evaluation/recorder";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
+import {
+  BackgroundMotionTracker,
+  describeMovementContext,
+} from "../background-motion-tracker";
 import type {
   CameraProfile,
   CameraRawFeature,
@@ -173,6 +178,9 @@ async function main() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const backgroundMotionTracker = new BackgroundMotionTracker();
+  const movementClassifier = new MovementClassifier();
+
   status.textContent = "requesting camera permission...";
   await startWebcam(video);
 
@@ -225,6 +233,8 @@ async function main() {
   function startCalibration() {
     calibrationFrames = [];
     calibrationCameraFrames = [];
+    movementClassifier.reset();
+    backgroundMotionTracker.reset();
     calibrationDeadline = performance.now() + CALIBRATION_DURATION_MS;
     calibrationMessage = "";
     calibrateButton.disabled = true;
@@ -250,6 +260,8 @@ async function main() {
 
       const nextMadProfile = createInitialMADProfile({ now: Date.now() });
       activateProfile(nextProfile, nextCameraProfile, nextMadProfile);
+      movementClassifier.reset();
+      backgroundMotionTracker.reset();
       const createdAt = Date.now();
       await saveProfiles({
         userProfile: nextProfile,
@@ -544,6 +556,8 @@ async function main() {
 
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
+      movementClassifier.reset();
+      backgroundMotionTracker.reset();
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
       setAlertBanner(v0AlertBanner, "unknown", `V0: ${describeUnreliableState(quality)}`);
       setAlertBanner(v2AlertBanner, "unknown", `V2: ${describeUnreliableState(quality)}`);
@@ -557,11 +571,18 @@ async function main() {
     previousFeature = feature;
 
     if (!feature) {
+      movementClassifier.reset();
       setAlertBanner(v0AlertBanner, "unknown", "V0: UNKNOWN");
       setAlertBanner(v2AlertBanner, "unknown", "V2: UNKNOWN");
       requestAnimationFrame(loop);
       return;
     }
+
+    const backgroundMotion = backgroundMotionTracker.update(video);
+    feature.backgroundMotion = backgroundMotion.magnitude;
+    feature.backgroundTransformConfidence = backgroundMotion.confidence;
+    const movement = movementClassifier.update(feature);
+    feature.movementContext = movement.context;
 
     const cameraRawFeature = toCameraRawFeature(landmarks, timestamp);
     const cameraDelta =
@@ -629,6 +650,9 @@ async function main() {
       cameraDelta ? `camera translation X: ${cameraDelta.globalTranslationX.toFixed(3)}` : "",
       cameraDelta ? `camera translation Y: ${cameraDelta.globalTranslationY.toFixed(3)}` : "",
       cameraDelta ? `corrected yaw: ${cameraDelta.correctedYaw.toFixed(3)}` : "",
+      `movement context: ${describeMovementContext(movement.context)}`,
+      `background motion: ${backgroundMotion.magnitude.toFixed(3)}`,
+      `movement onset: ${movement.onset.toLowerCase()}`,
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
       `landmark coverage: ${(quality.landmarkCoverage * 100).toFixed(0)}%`,
       quality.occlusionRate > 0
