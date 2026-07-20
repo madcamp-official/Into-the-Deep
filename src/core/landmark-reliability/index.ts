@@ -4,11 +4,16 @@ import type { LandmarkQuality } from "../types";
 
 export const RELIABILITY_THRESHOLDS = {
   minConfidence: 0.5,
-  // Separate constants (not reuses of minConfidence) so eye/ear sensitivity
-  // can be tuned independently later — see the forwardHead/yawProxy review
-  // that flagged eye/ear landmarks as never being visibility-checked.
+  // Separate constants (not reuses of minConfidence) so eye/ear/wrist
+  // sensitivity can be tuned independently later — see the
+  // forwardHead/yawProxy review that flagged eye/ear landmarks as never
+  // being visibility-checked.
   eyeMinConfidence: 0.5,
   earMinConfidence: 0.5,
+  // Wrists back hand-relative features (handFaceDistance,
+  // handShoulderDistance per feature_discussion) — elbows are deliberately
+  // not tracked per need_discussion's "팔꿈치 없애기" decision.
+  wristMinConfidence: 0.5,
   // Distance from the 0..1 frame edge a landmark must clear to count as
   // "in frame" — a small margin so partially-clipped shoulders/face
   // register as unreliable before they fully leave the image.
@@ -30,6 +35,8 @@ export function assessLandmarkQuality(
   const rightEye = landmarks?.[LANDMARK_INDEX.rightEye];
   const leftEar = landmarks?.[LANDMARK_INDEX.leftEar];
   const rightEar = landmarks?.[LANDMARK_INDEX.rightEar];
+  const leftWrist = landmarks?.[LANDMARK_INDEX.leftWrist];
+  const rightWrist = landmarks?.[LANDMARK_INDEX.rightWrist];
 
   const personPresent = Boolean(nose && leftShoulder && rightShoulder);
   if (!personPresent || !nose || !leftShoulder || !rightShoulder) {
@@ -42,6 +49,7 @@ export function assessLandmarkQuality(
       reliable: false,
       eyesReliable: false,
       earsReliable: false,
+      wristsReliable: false,
     };
   }
 
@@ -58,6 +66,12 @@ export function assessLandmarkQuality(
     isVisible(rightEye, RELIABILITY_THRESHOLDS.eyeMinConfidence);
   const earsReliable = isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
     isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
+  // Unlike eyes/ears (symmetric pair, both needed for one feature), hand
+  // features only need whichever single wrist is near the face/shoulder —
+  // e.g. resting a chin on one hand leaves the other arm off on a desk or
+  // out of frame, which shouldn't disqualify the gesture.
+  const wristsReliable = isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
+    isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
 
   return {
     timestamp,
@@ -68,6 +82,7 @@ export function assessLandmarkQuality(
     reliable,
     eyesReliable,
     earsReliable,
+    wristsReliable,
   };
 }
 

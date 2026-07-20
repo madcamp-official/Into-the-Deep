@@ -42,6 +42,8 @@ export const LANDMARK_INDEX = {
   rightEar: 8,
   leftShoulder: 11,
   rightShoulder: 12,
+  leftWrist: 15,
+  rightWrist: 16,
   leftHip: 23,
   rightHip: 24,
 } as const;
