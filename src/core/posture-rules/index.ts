@@ -11,14 +11,19 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "FORWARD_HEAD",
     requiredLandmarks: EYES,
+    // anyOf used to require headShoulderDistanceRatio > 2 OR pitchProxy >
+    // 1.5 on top of faceToShoulderRatio. Confirmed live: on a genuinely
+    // exaggerated turtle neck, headShoulderDistanceRatio's score came back
+    // -13.54 — it shrinks (head visually drops toward the shoulder line
+    // in 2D as it pushes toward the camera), the opposite of what the
+    // anyOf gate assumed — so only pitchProxy could ever satisfy it, and
+    // barely, requiring an extreme pose. faceToShoulderRatio alone was the
+    // clean, reliable signal (4.53 in the same test), so it's now the sole
+    // condition; the other two stay as supporting/informational only.
     required: [
       { feature: "faceToShoulderRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" },
     ],
-    anyOf: [
-      { feature: "headShoulderDistanceRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" },
-      { feature: "pitchProxy", operator: "GT", threshold: 1.5, reference: "CALIBRATION" },
-    ],
-    supporting: ["faceToShoulderRatio", "pitchProxy"],
+    supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
   },
   // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
