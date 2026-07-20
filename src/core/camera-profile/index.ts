@@ -1,6 +1,6 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
-import type { CameraProfile, CameraRawFeature } from "../types";
+import type { CameraDelta, CameraProfile, CameraRawFeature } from "../types";
 
 const CAMERA_PROFILE_FIELDS = [
   "shoulderWidth",
@@ -82,6 +82,31 @@ export function toCameraRawFeature(
     faceToShoulderRatio,
     yawProxy,
     pitchProxy,
+  };
+}
+
+// Raw camera-relative deltas (feature_discussion's globalScaleDelta,
+// globalTranslationX/Y, correctedYaw) — calibration-relative, but computed
+// straight from CameraProfile like the rest of A's camera-raw work, not
+// from UserProfile. B's CameraAssessment turns these into a
+// VALID/ADJUSTED/RECALIBRATION_REQUIRED judgment (plan_compact.md 부담
+// 조정 포인트).
+export function computeCameraDelta(
+  current: CameraRawFeature,
+  profile: CameraProfile,
+): CameraDelta {
+  return {
+    timestamp: current.timestamp,
+    globalScaleDelta:
+      profile.shoulderWidth > 0
+        ? (current.shoulderWidth - profile.shoulderWidth) / profile.shoulderWidth
+        : 0,
+    globalTranslationX: current.shoulderCenterX - profile.shoulderCenterX,
+    globalTranslationY: current.shoulderCenterY - profile.shoulderCenterY,
+    // baselineYawOffset per feature_discussion is exactly profile.yawProxy
+    // (the calibration-time yawProxy, already stored) — no new profile
+    // field needed, just subtract it here.
+    correctedYaw: current.yawProxy - profile.yawProxy,
   };
 }
 

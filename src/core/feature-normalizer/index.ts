@@ -42,6 +42,8 @@ export function toFrameFeature(
   const rightEye = landmarks[LANDMARK_INDEX.rightEye];
   const leftEar = landmarks[LANDMARK_INDEX.leftEar];
   const rightEar = landmarks[LANDMARK_INDEX.rightEar];
+  const leftWrist = landmarks[LANDMARK_INDEX.leftWrist];
+  const rightWrist = landmarks[LANDMARK_INDEX.rightWrist];
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!nose || !leftShoulder || !rightShoulder) return null;
@@ -74,15 +76,18 @@ export function toFrameFeature(
   const earsReliable =
     isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
     isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
+  const wristsReliable =
+    isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
+    isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
 
+  // Matches landmark-reliability's confidence definition (need_discussion
+  // #2): only the required landmarks (nose, both shoulders) determine frame
+  // confidence. Eyes/ears/wrists are optional — losing one shouldn't drag
+  // down the frame-level value, only the specific features that need them.
   const confidence = Math.min(
     nose.visibility,
     leftShoulder.visibility,
     rightShoulder.visibility,
-    ...(leftEye ? [leftEye.visibility] : []),
-    ...(rightEye ? [rightEye.visibility] : []),
-    ...(leftEar ? [leftEar.visibility] : []),
-    ...(rightEar ? [rightEar.visibility] : []),
   );
   const rawHeadXOffset = shoulderWidth > 0 ? (nose.x - shoulderCenterX) / shoulderWidth : 0;
   const rawBodyScale = shoulderWidth;
@@ -96,6 +101,80 @@ export function toFrameFeature(
     eyeDistance !== undefined && shoulderWidth > 0 ? eyeDistance / shoulderWidth : undefined;
   const rawPitchProxy =
     faceCenterY !== undefined && shoulderWidth > 0 ? (nose.y - faceCenterY) / shoulderWidth : undefined;
+
+  // Head center for the ratio features below: prefer the eye midpoint (most
+  // accurate), fall back to the ear midpoint, and finally to the nose —
+  // nose is always present (it's a required landmark), so headXRatio/
+  // headYRatio/headShoulderDistanceRatio are never undefined even when eyes
+  // and ears are both unreliable (e.g. a head turned far to one side).
+  const faceCenterX =
+    eyesReliable && leftEye && rightEye ? (leftEye.x + rightEye.x) / 2 : undefined;
+  const earCenterX =
+    earsReliable && leftEar && rightEar ? (leftEar.x + rightEar.x) / 2 : undefined;
+  const earCenterY =
+    earsReliable && leftEar && rightEar ? (leftEar.y + rightEar.y) / 2 : undefined;
+  const headCenterX = faceCenterX ?? earCenterX ?? nose.x;
+  const headCenterY = faceCenterY ?? earCenterY ?? nose.y;
+
+  const rawShoulderAsymmetry =
+    shoulderWidth > 0 ? (leftShoulder.y - rightShoulder.y) / shoulderWidth : 0;
+  const rawHeadXRatio = shoulderWidth > 0 ? (headCenterX - shoulderCenterX) / shoulderWidth : 0;
+  const rawHeadYRatio = shoulderWidth > 0 ? (headCenterY - shoulderCenterY) / shoulderWidth : 0;
+  const rawHeadShoulderDistanceRatio =
+    shoulderWidth > 0
+      ? Math.hypot(headCenterX - shoulderCenterX, headCenterY - shoulderCenterY) / shoulderWidth
+      : 0;
+  // Unsigned counterpart to headYRatio — "눕듯이 앉기"/"턱을 뒤로 당기기" rules
+  // (feature_discussion) care about the head-to-shoulder gap shrinking
+  // regardless of direction, not the signed offset.
+  const rawBodyCompressionRatio = Math.abs(rawHeadYRatio);
+
+  // Auxiliary torso-twist signal (feature_discussion's "z좌표는 보조값으로
+  // 사용"): MediaPipe's z is depth relative to the hips, noisier than x/y,
+  // so this only ever backs up shoulderTilt/torsoRotationProxy, never
+  // stands alone as a rule condition.
+  const rawShoulderDepthAsymmetry =
+    shoulderWidth > 0 ? (leftShoulder.z - rightShoulder.z) / shoulderWidth : 0;
+
+  // Head roll: angle of the eye line (fallback: ear line), same atan2
+  // convention as shoulderTilt so a level head reads near 0.
+  let rawHeadRoll: number | undefined;
+  if (eyesReliable && leftEye && rightEye) {
+    rawHeadRoll = (Math.atan2(leftEye.y - rightEye.y, leftEye.x - rightEye.x) * 180) / Math.PI;
+  } else if (earsReliable && leftEar && rightEar) {
+    rawHeadRoll = (Math.atan2(leftEar.y - rightEar.y, leftEar.x - rightEar.x) * 180) / Math.PI;
+  }
+
+  // Shoulder "rolling forward" proxy: shrinks as shoulders round forward and
+  // narrow relative to a face width that stays roughly constant.
+  const rawRelativeShoulderScale =
+    eyeDistance !== undefined && eyeDistance > 0 ? shoulderWidth / eyeDistance : undefined;
+
+  // Hand-relative features (turtle-neck-with-chin-resting rules): pick
+  // whichever visible wrist sits closer to the head, since only one hand is
+  // ever actually near the face/chin at a time — the other arm may be
+  // resting on a desk or out of frame entirely.
+  let rawHandFaceDistance: number | undefined;
+  let rawHandShoulderDistance: number | undefined;
+  if (wristsReliable) {
+    const candidates = [leftWrist, rightWrist].filter(
+      (wrist): wrist is NormalizedLandmark =>
+        wrist !== undefined && isVisible(wrist, RELIABILITY_THRESHOLDS.wristMinConfidence),
+    );
+    const chosenWrist = candidates.reduce((closest, candidate) =>
+      Math.hypot(candidate.x - headCenterX, candidate.y - headCenterY) <
+      Math.hypot(closest.x - headCenterX, closest.y - headCenterY)
+        ? candidate
+        : closest,
+    );
+    if (shoulderWidth > 0) {
+      rawHandFaceDistance =
+        Math.hypot(chosenWrist.x - headCenterX, chosenWrist.y - headCenterY) / shoulderWidth;
+      rawHandShoulderDistance =
+        Math.hypot(chosenWrist.x - shoulderCenterX, chosenWrist.y - shoulderCenterY) /
+        shoulderWidth;
+    }
+  }
 
   // Head-turn proxy: how asymmetric the nose sits between the two ears,
   // mirrors camera-profile's yawProxy. Facing the camera straight-on keeps
@@ -147,6 +226,32 @@ export function toFrameFeature(
   const pitchProxy =
     rawPitchProxy !== undefined ? smooth(rawPitchProxy, previous?.pitchProxy) : undefined;
   const yawProxy = rawYawProxy !== undefined ? smooth(rawYawProxy, previous?.yawProxy) : undefined;
+  const shoulderAsymmetry = smooth(rawShoulderAsymmetry, previous?.shoulderAsymmetry);
+  const headXRatio = smooth(rawHeadXRatio, previous?.headXRatio);
+  const headYRatio = smooth(rawHeadYRatio, previous?.headYRatio);
+  const headShoulderDistanceRatio = smooth(
+    rawHeadShoulderDistanceRatio,
+    previous?.headShoulderDistanceRatio,
+  );
+  const bodyCompressionRatio = smooth(rawBodyCompressionRatio, previous?.bodyCompressionRatio);
+  const shoulderDepthAsymmetry = smooth(
+    rawShoulderDepthAsymmetry,
+    previous?.shoulderDepthAsymmetry,
+  );
+  const headRoll =
+    rawHeadRoll !== undefined ? smooth(rawHeadRoll, previous?.headRoll) : undefined;
+  const relativeShoulderScale =
+    rawRelativeShoulderScale !== undefined
+      ? smooth(rawRelativeShoulderScale, previous?.relativeShoulderScale)
+      : undefined;
+  const handFaceDistance =
+    rawHandFaceDistance !== undefined
+      ? smooth(rawHandFaceDistance, previous?.handFaceDistance)
+      : undefined;
+  const handShoulderDistance =
+    rawHandShoulderDistance !== undefined
+      ? smooth(rawHandShoulderDistance, previous?.handShoulderDistance)
+      : undefined;
 
   const motionEnergy = previous
     ? Math.hypot(
@@ -170,6 +275,16 @@ export function toFrameFeature(
     ...(pitchProxy !== undefined ? { pitchProxy } : {}),
     ...(yawProxy !== undefined ? { yawProxy } : {}),
     motionEnergy,
+    shoulderAsymmetry,
+    headXRatio,
+    headYRatio,
+    headShoulderDistanceRatio,
+    bodyCompressionRatio,
+    shoulderDepthAsymmetry,
+    ...(headRoll !== undefined ? { headRoll } : {}),
+    ...(relativeShoulderScale !== undefined ? { relativeShoulderScale } : {}),
+    ...(handFaceDistance !== undefined ? { handFaceDistance } : {}),
+    ...(handShoulderDistance !== undefined ? { handShoulderDistance } : {}),
   };
 }
 

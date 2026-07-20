@@ -36,35 +36,13 @@ describe("evaluateV0", () => {
     });
   });
 
-  it("flags BAD with the offending reasons when shoulderTilt and shoulderYOffset exceed thresholds", () => {
+  it("flags BAD with the offending reason when shoulderTilt exceeds threshold", () => {
     const feature: FrameFeature = {
       timestamp: 2,
       confidence: 0.9,
       shoulderTilt: referenceCenters.shoulderTilt + DEFAULT_THRESHOLDS.shoulderTiltDeg + 1,
       headXOffset: 0,
       shoulderXOffset: 0,
-      shoulderYOffset: referenceCenters.shoulderYOffset + DEFAULT_THRESHOLDS.shoulderYOffsetRatio + 0.05,
-      bodyScale: 1,
-      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
-      pitchProxy: referenceCenters.pitchProxy,
-      motionEnergy: 0.1,
-    };
-
-    expect(evaluateV0(feature, referenceCenters)).toEqual({
-      timestamp: 2,
-      state: "BAD",
-      alert: true,
-      reason: ["shoulderTilt", "shoulderYOffset"],
-    });
-  });
-
-  it("flags BAD with shoulderXOffset when the shoulders shift sideways past the threshold", () => {
-    const feature: FrameFeature = {
-      timestamp: 3,
-      confidence: 0.9,
-      shoulderTilt: 0,
-      headXOffset: 0,
-      shoulderXOffset: referenceCenters.shoulderXOffset + DEFAULT_THRESHOLDS.shoulderXOffsetRatio + 0.05,
       shoulderYOffset: 0,
       bodyScale: 1,
       faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
@@ -73,10 +51,36 @@ describe("evaluateV0", () => {
     };
 
     expect(evaluateV0(feature, referenceCenters)).toEqual({
-      timestamp: 3,
+      timestamp: 2,
       state: "BAD",
       alert: true,
-      reason: ["shoulderXOffset"],
+      reason: ["shoulderTilt"],
+    });
+  });
+
+  it("does not flag BAD when only shoulderXOffset/shoulderYOffset move (e.g. sliding a chair back with the camera untouched)", () => {
+    // These fields are shoulderCenter/shoulderWidth — sliding the chair back
+    // shrinks shoulderWidth while shoulderCenter barely moves, so the ratio
+    // grows even with zero real posture change. They're no longer checked
+    // by evaluateV0 for exactly this reason.
+    const feature: FrameFeature = {
+      timestamp: 3,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: referenceCenters.shoulderXOffset + 5,
+      shoulderYOffset: referenceCenters.shoulderYOffset + 5,
+      bodyScale: 1,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
+      pitchProxy: referenceCenters.pitchProxy,
+      motionEnergy: 0.1,
+    };
+
+    expect(evaluateV0(feature, referenceCenters)).toEqual({
+      timestamp: 3,
+      state: "STABLE",
+      alert: false,
+      reason: [],
     });
   });
 
@@ -194,14 +198,14 @@ describe("FixedThresholdDetector", () => {
       timestamp: 0,
       state: "BAD",
       alert: false,
-      reason: ["shoulderYOffset"],
+      reason: ["shoulderTilt"],
     });
 
     expect(detector.update(createBadFrame(1490))).toMatchObject({
       timestamp: 1490,
       state: "BAD",
       alert: false,
-      reason: ["shoulderYOffset"],
+      reason: ["shoulderTilt"],
     });
   });
 
@@ -214,7 +218,7 @@ describe("FixedThresholdDetector", () => {
       timestamp: 11500,
       state: "BAD",
       alert: true,
-      reason: ["shoulderYOffset"],
+      reason: ["shoulderTilt"],
     });
   });
 
@@ -234,7 +238,7 @@ describe("FixedThresholdDetector", () => {
       timestamp: 22000,
       state: "BAD",
       alert: false,
-      reason: ["shoulderYOffset"],
+      reason: ["shoulderTilt"],
     });
   });
 });
@@ -257,6 +261,6 @@ function createStableFrame(timestamp: number): FrameFeature {
 function createBadFrame(timestamp: number): FrameFeature {
   return {
     ...createStableFrame(timestamp),
-    shoulderYOffset: DEFAULT_THRESHOLDS.shoulderYOffsetRatio + 0.01,
+    shoulderTilt: DEFAULT_THRESHOLDS.shoulderTiltDeg + 1,
   };
 }
