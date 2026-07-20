@@ -39,13 +39,17 @@ import type {
   UserProfile,
 } from "../../core/types";
 
-// Shows which raw feature(s) tripped the alerting rule (e.g.
-// "faceToShoulderRatio, headShoulderDistanceRatio") rather than the posture
-// scenario name — matchedFeatures reflects only the first matched rule
-// (PostureRuleDetector.update), since that's the one driving state/alert.
+// Shows the matched posture type alongside which raw feature(s) tripped
+// the rule (e.g. "FORWARD_HEAD (faceToShoulderRatio)") — both reflect only
+// the first matched rule (PostureRuleDetector.update), since that's the
+// one driving state/alert.
 function describeMatchedFeatures(event: DetectionEvent | null): string {
-  if (!event?.matchedFeatures || event.matchedFeatures.length === 0) return "?";
-  return event.matchedFeatures.join(", ");
+  const postureType = event?.postureType ?? "?";
+  const features =
+    event?.matchedFeatures && event.matchedFeatures.length > 0
+      ? event.matchedFeatures.join(", ")
+      : "?";
+  return `${postureType} (${features})`;
 }
 
 // How long a Calibration/기준 자세 업데이트 click collects frames before
