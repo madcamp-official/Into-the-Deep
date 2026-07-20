@@ -16,18 +16,30 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // exaggerated turtle neck, headShoulderDistanceRatio's score came back
     // -13.54 — it shrinks (head visually drops toward the shoulder line
     // in 2D as it pushes toward the camera), the opposite of what the
-    // anyOf gate assumed — so only pitchProxy could ever satisfy it, and
-    // barely, requiring an extreme pose. faceToShoulderRatio alone was the
-    // clean, reliable signal (4.53 in the same test), so it's now the sole
-    // condition; the other two stay as supporting/informational only.
-    // Lowered from 2 -> 1.5 (tried 1.2 live, too sensitive): wanted to
-    // catch turtle neck on a small lean without over-triggering. Candidate
-    // value, not yet tuned against a development session.
+    // anyOf gate assumed. faceToShoulderRatio alone is the clean, reliable
+    // signal for turtle neck (craning toward the camera) specifically —
+    // a pure head-down pitch with no lean-toward-camera component is a
+    // different posture (HEAD_DOWN below), not this one.
     required: [
       { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
+  },
+  {
+    postureType: "HEAD_DOWN",
+    requiredLandmarks: EYES,
+    // Distinct from FORWARD_HEAD: confirmed live that holding the head
+    // pitched down (chin toward chest, no craning toward the camera) read
+    // as normal, because faceToShoulderRatio doesn't respond to pure
+    // downward pitch. pitchProxy is the direct signal for that motion on
+    // its own. feature_discussion's #14 ("고개 숙여서 아래 보기") lists this
+    // as a *transient* action (writing, glancing down), but a *sustained*
+    // hold of the same pitch is a distinct posture worth its own alert
+    // rather than being silently absorbed into FORWARD_HEAD.
+    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.5, reference: "CALIBRATION" }],
+    supporting: ["headYRatio", "headShoulderDistanceRatio"],
+    reason: "head is pitched down relative to the calibrated direction",
   },
   // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
   // shoulderWidth — an absolute screen position divided by scale, not a
