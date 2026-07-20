@@ -187,6 +187,32 @@ export function toFrameFeature(
     rawYawProxy = total > 0 ? (leftDist - rightDist) / total : 0;
   }
 
+  // correctedYaw/forwardLeanProxy/shoulderWidthRatio: posture-rule-detector
+  // normalizes every CALIBRATION-reference feature generically as
+  // (current - profile.originalCenters[feature]) / MAD, so these are just
+  // the raw per-frame ingredients — the "correction"/"delta" happens once,
+  // uniformly, in that shared normalization rather than being baked in
+  // here (baking it in here would double-subtract). See need_discussion.
+  //
+  // correctedYaw: same raw signal as yawProxy — the calibration-time yaw
+  // baseline already absorbs a webcam mounted off to one side, so the
+  // generic calibration-delta is what actually "corrects" it.
+  const rawCorrectedYaw = rawYawProxy;
+  // forwardLeanProxy: faceToShoulderRatio + pitchProxy, undelta'd. Once the
+  // engine subtracts each one's calibration center, this becomes
+  // faceToShoulderRatioDelta + pitchProxyDelta — feature_discussion's
+  // definition (weight λ folded into "just add them"; not yet tuned).
+  const rawForwardLeanProxy =
+    rawFaceToShoulderRatio !== undefined && rawPitchProxy !== undefined
+      ? rawFaceToShoulderRatio + rawPitchProxy
+      : undefined;
+  // shoulderWidthRatio: same raw value as bodyScale, exposed under the name
+  // posture-rules.ts's ROUNDED_SHOULDERS/TORSO_TWIST/SHOULDERS_ONLY_TWIST
+  // expect; the generic calibration-delta turns it into "how much has
+  // shoulder width shrunk/grown from calibration," matching the "현재/
+  // calibration 비율" intent closely enough for a MAD-normalized rule.
+  const rawShoulderWidthRatio = rawBodyScale;
+
   // Shoulder-center position scaled by shoulder width, same convention as
   // headXOffset. Raw frame-normalized position would confound camera
   // distance with real movement (moving closer shrinks apparent drift,
@@ -252,6 +278,13 @@ export function toFrameFeature(
     rawHandShoulderDistance !== undefined
       ? smooth(rawHandShoulderDistance, previous?.handShoulderDistance)
       : undefined;
+  const correctedYaw =
+    rawCorrectedYaw !== undefined ? smooth(rawCorrectedYaw, previous?.correctedYaw) : undefined;
+  const forwardLeanProxy =
+    rawForwardLeanProxy !== undefined
+      ? smooth(rawForwardLeanProxy, previous?.forwardLeanProxy)
+      : undefined;
+  const shoulderWidthRatio = smooth(rawShoulderWidthRatio, previous?.shoulderWidthRatio);
 
   const motionEnergy = previous
     ? Math.hypot(
@@ -285,6 +318,9 @@ export function toFrameFeature(
     ...(relativeShoulderScale !== undefined ? { relativeShoulderScale } : {}),
     ...(handFaceDistance !== undefined ? { handFaceDistance } : {}),
     ...(handShoulderDistance !== undefined ? { handShoulderDistance } : {}),
+    ...(correctedYaw !== undefined ? { correctedYaw } : {}),
+    ...(forwardLeanProxy !== undefined ? { forwardLeanProxy } : {}),
+    shoulderWidthRatio,
   };
 }
 
