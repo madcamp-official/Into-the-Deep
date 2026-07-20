@@ -524,19 +524,16 @@ async function main() {
       }
     }
 
-    if (!detector) {
+    if (!postureDetector) {
       setAlertBanner("idle", "캘리브레이션 후 측정을 시작하세요");
     } else {
       const v0Alert = event?.alert ?? false;
-      const v1Alert = v1Result?.event.alert ?? false;
-      if (v0Alert || v1Alert) {
-        const sources = [v0Alert ? "V0" : null, v1Alert ? "V2" : null]
+      const v2Alert = v2Event?.alert ?? false;
+      if (v0Alert || v2Alert) {
+        const sources = [v0Alert ? "V0" : null, v2Alert ? "V2" : null]
           .filter((source): source is string => source !== null)
           .join(", ");
-        const reason =
-          v1Result && v1Result.observation.dominantFeatures.length > 0
-            ? v1Result.observation.dominantFeatures.join(", ")
-            : (event?.reason.join(", ") ?? "");
+        const reason = v2Event?.reason.join(", ") || event?.reason.join(", ") || "";
         setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
       } else {
         setAlertBanner("good", "정상 자세입니다");
