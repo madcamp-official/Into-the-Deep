@@ -1,4 +1,4 @@
-import type { UserProfile, CameraProfile } from "../../core/types";
+import type { CameraProfile, MADProfile, UserProfile } from "../../core/types";
 
 const DB_NAME = "posture-core";
 const DB_VERSION = 1;
@@ -8,6 +8,7 @@ const DEFAULT_PROFILE_KEY = "default";
 export interface StoredProfiles {
   userProfile: UserProfile;
   cameraProfile: CameraProfile;
+  madProfile?: MADProfile;
   lastCalibrationAt: number;
 }
 

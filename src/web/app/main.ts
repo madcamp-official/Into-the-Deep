@@ -8,16 +8,15 @@ import {
 } from "../../core/camera-profile";
 import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
 import { buildUserProfile } from "../../core/profile-builder";
-import { FixedThresholdDetector } from "../../core/fixed-threshold-detector";
-import {
-  PersonalizedDriftDetector,
-  type PersonalizedDetectionResult,
-} from "../../core/personalized-detector";
+import { createInitialMADProfile } from "../../core/mad-profile";
+import { PostureRuleDetector } from "../../core/posture-rule-detector";
+import { V2MadUpdater } from "../../core/v2-mad-updater";
 import {
   SessionRecorder,
   toJSONL,
 } from "../../evaluation/recorder";
 import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
+import { analyzeDevelopmentSession } from "../../evaluation/development-analysis";
 import {
   getNextDevelopmentStep,
   STANDARD_DEVELOPMENT_SESSION,
@@ -139,8 +138,10 @@ async function main() {
   let profile: UserProfile | null = null;
   let cameraProfile: CameraProfile | null = null;
   let profileCreatedAt: number | null = null;
-  let detector: FixedThresholdDetector | null = null;
-  let v1Detector: PersonalizedDriftDetector | null = null;
+  let postureDetector: PostureRuleDetector | null = null;
+  let v2PostureDetector: PostureRuleDetector | null = null;
+  let madProfile = createInitialMADProfile();
+  let v2MadUpdater = new V2MadUpdater(madProfile);
   let calibrationFrames: FrameFeature[] | null = null;
   let calibrationCameraFrames: CameraRawFeature[] | null = null;
   let calibrationDeadline = 0;
@@ -153,6 +154,7 @@ async function main() {
     stepIndex: number;
     steps: readonly DevelopmentSessionStep[];
   } | null = null;
+  let developmentAnalysisSummary = "";
 
   const recorder = new SessionRecorder();
   const scenarioLabeler = new ScenarioLabeler();
@@ -160,7 +162,11 @@ async function main() {
   try {
     const storedProfiles = await loadProfiles();
     if (storedProfiles) {
-      activateProfile(storedProfiles.userProfile, storedProfiles.cameraProfile);
+      activateProfile(
+        storedProfiles.userProfile,
+        storedProfiles.cameraProfile,
+        storedProfiles.madProfile ?? createInitialMADProfile(),
+      );
       profileCreatedAt = storedProfiles.lastCalibrationAt;
       calibrationMessage = "saved profile restored";
     }
@@ -194,11 +200,13 @@ async function main() {
         return;
       }
 
-      activateProfile(nextProfile, nextCameraProfile);
+      const nextMadProfile = createInitialMADProfile({ now: Date.now() });
+      activateProfile(nextProfile, nextCameraProfile, nextMadProfile);
       const createdAt = Date.now();
       await saveProfiles({
         userProfile: nextProfile,
         cameraProfile: nextCameraProfile,
+        madProfile: nextMadProfile,
         lastCalibrationAt: createdAt,
       });
       profileCreatedAt = createdAt;
@@ -214,11 +222,14 @@ async function main() {
   function activateProfile(
     nextProfile: UserProfile,
     nextCameraProfile: CameraProfile,
+    nextMadProfile: ReturnType<typeof createInitialMADProfile>,
   ): void {
     profile = nextProfile;
     cameraProfile = nextCameraProfile;
-    detector = new FixedThresholdDetector(profile.originalCenters);
-    v1Detector = new PersonalizedDriftDetector(profile);
+    madProfile = nextMadProfile;
+    postureDetector = new PostureRuleDetector(profile, madProfile);
+    v2PostureDetector = new PostureRuleDetector(profile, madProfile);
+    v2MadUpdater = new V2MadUpdater(madProfile);
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
   }
@@ -281,7 +292,7 @@ async function main() {
 
     recorder.start(
       profile && cameraProfile && profileCreatedAt !== null
-        ? { userProfile: profile, cameraProfile, profileCreatedAt }
+        ? { userProfile: profile, cameraProfile, madProfile, profileCreatedAt }
         : undefined,
     );
     scenarioLabeler.reset(performance.now());
@@ -296,12 +307,20 @@ async function main() {
   function finishRecording(): void {
     if (!recorder.isRecording()) return;
 
+    const wasAutomated = automatedSession !== null;
     endScenario();
     const entries = recorder.stop();
     automatedSession = null;
     recordButton.textContent = "측정 시작";
     automatedSessionButton.textContent = "자동 Development Session";
     lastSessionLog = toJSONL(entries);
+    if (wasAutomated) {
+      const analysis = analyzeDevelopmentSession(entries);
+      developmentAnalysisSummary =
+        `development analysis: ${analysis.normalFrameCount} normal frames, ` +
+        `${Object.keys(analysis.initialMAD).length} MAD features, ` +
+        `V2 alpha ${analysis.v2.alpha}`;
+    }
     downloadButton.disabled = entries.length === 0;
     scenarioStartedButton.disabled = true;
     driftOnsetButton.disabled = true;
@@ -470,10 +489,15 @@ async function main() {
     }
 
     let event: DetectionEvent | null = null;
-    let v1Result: PersonalizedDetectionResult | null = null;
-    if (detector) {
-      event = detector.update(feature);
-      v1Result = v1Detector?.update(feature) ?? null;
+    let v2Event: DetectionEvent | null = null;
+    if (postureDetector) {
+      event = postureDetector.update(feature, quality);
+      v2Event = v2PostureDetector?.update(feature, quality) ?? null;
+      madProfile = v2MadUpdater.update(feature, {
+        landmarkQuality: quality,
+        matchedPosture: v2Event?.postureType,
+      });
+      v2PostureDetector?.setMADProfile(madProfile);
       if (recorder.isRecording()) {
         recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
       }
@@ -514,13 +538,12 @@ async function main() {
         : "",
       event ? `state: ${event.state}` : "state: (calibrate first)",
       event ? `alert: ${event.alert}` : "",
+      event?.postureType ? `v0 posture: ${event.postureType}` : "",
       event && event.reason.length > 0 ? `reason: ${event.reason.join(", ")}` : "",
-      v1Result ? `v1 drift score: ${v1Result.observation.driftScore.toFixed(2)}` : "",
-      v1Result ? `v1 state: ${v1Result.event.state}` : "",
-      v1Result ? `v1 alert: ${v1Result.event.alert}` : "",
-      v1Result && v1Result.event.state === "BAD" && v1Result.observation.dominantFeatures.length > 0
-        ? `v1 dominant: ${v1Result.observation.dominantFeatures.join(", ")}`
-        : "",
+      v2Event ? `v2 state: ${v2Event.state}` : "",
+      v2Event?.postureType ? `v2 posture: ${v2Event.postureType}` : "",
+      `v2 MAD updates: ${madProfile.updateCount}`,
+      developmentAnalysisSummary,
     ]
       .filter((line) => line.length > 0)
       .join("\n");

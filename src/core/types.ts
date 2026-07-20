@@ -32,6 +32,10 @@ export type PostureType =
 
 export type PostureFeatureName =
   | "shoulderTilt"
+  | "headXOffset"
+  | "shoulderXOffset"
+  | "shoulderYOffset"
+  | "bodyScale"
   | "shoulderAsymmetry"
   | "shoulderCenterX"
   | "shoulderCenterY"
