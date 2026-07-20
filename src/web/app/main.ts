@@ -544,6 +544,9 @@ async function main() {
         ? `shoulder asymmetry: ${feature.shoulderAsymmetry.toFixed(3)}`
         : "",
       feature.headRoll !== undefined ? `head roll: ${feature.headRoll.toFixed(1)}` : "",
+      feature.shoulderDepthAsymmetry !== undefined
+        ? `shoulder depth asymmetry: ${feature.shoulderDepthAsymmetry.toFixed(3)}`
+        : "",
       feature.handFaceDistance !== undefined
         ? `hand-face distance: ${feature.handFaceDistance.toFixed(3)}`
         : "",

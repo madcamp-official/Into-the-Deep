@@ -27,6 +27,7 @@ export interface FrameFeature {
   relativeShoulderScale?: number;
   handFaceDistance?: number;
   handShoulderDistance?: number;
+  shoulderDepthAsymmetry?: number;
 }
 
 export interface CameraRawFeature {

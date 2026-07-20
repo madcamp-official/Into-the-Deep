@@ -240,3 +240,69 @@ describe("toFrameFeature jump rejection", () => {
     expect(toFrameFeature(extreme, 0)).not.toBeNull();
   });
 });
+
+// division_plan_3days.md Day1 A task: prove the ratio-based design actually
+// holds up — sliding the chair closer/farther/sideways (uniform scale +
+// translation applied to every landmark, same relative posture) should
+// leave posture features alone and only move the environment/raw camera
+// signals (plan_compact.md's "환경 feature만 변화 -> alert 없음").
+function transformLandmarks(
+  landmarks: NormalizedLandmark[],
+  scale: number,
+  translateX: number,
+  translateY: number,
+): NormalizedLandmark[] {
+  return landmarks.map((point) => ({
+    x: point.x * scale + translateX,
+    y: point.y * scale + translateY,
+    z: point.z,
+    visibility: point.visibility,
+  }));
+}
+
+describe("toFrameFeature chair-movement invariance", () => {
+  it("keeps relative posture features unchanged when the whole body moves closer and sideways", () => {
+    const baseline = createLandmarks();
+    // 30% closer to the camera (scale 1.3) and shifted sideways/down —
+    // same chair-seated posture, different position/distance in frame.
+    const moved = transformLandmarks(baseline, 1.3, 0.12, 0.05);
+
+    const baseFeature = toFrameFeature(baseline, 0);
+    const movedFeature = toFrameFeature(moved, 0);
+    expect(baseFeature).not.toBeNull();
+    expect(movedFeature).not.toBeNull();
+    if (!baseFeature || !movedFeature) return;
+
+    for (const key of [
+      "shoulderTilt",
+      "headXRatio",
+      "headYRatio",
+      "headShoulderDistanceRatio",
+      "shoulderAsymmetry",
+      "faceToShoulderRatio",
+      "pitchProxy",
+      "yawProxy",
+    ] as const) {
+      expect(movedFeature[key]).toBeCloseTo(baseFeature[key] ?? NaN, 6);
+    }
+
+    // The environment/raw signal that a chair move *should* affect: body
+    // scale grows by exactly the simulated scale factor.
+    expect(movedFeature.bodyScale).toBeCloseTo(baseFeature.bodyScale * 1.3, 6);
+  });
+
+  it("keeps relative posture features unchanged under scale alone (moving straight back)", () => {
+    const baseline = createLandmarks();
+    const movedBack = transformLandmarks(baseline, 0.7, 0, 0);
+
+    const baseFeature = toFrameFeature(baseline, 0);
+    const movedFeature = toFrameFeature(movedBack, 0);
+    expect(baseFeature).not.toBeNull();
+    expect(movedFeature).not.toBeNull();
+    if (!baseFeature || !movedFeature) return;
+
+    expect(movedFeature.headXRatio).toBeCloseTo(baseFeature.headXRatio ?? NaN, 6);
+    expect(movedFeature.headYRatio).toBeCloseTo(baseFeature.headYRatio ?? NaN, 6);
+    expect(movedFeature.bodyScale).toBeCloseTo(baseFeature.bodyScale * 0.7, 6);
+  });
+});

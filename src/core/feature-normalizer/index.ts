@@ -129,6 +129,13 @@ export function toFrameFeature(
   // regardless of direction, not the signed offset.
   const rawBodyCompressionRatio = Math.abs(rawHeadYRatio);
 
+  // Auxiliary torso-twist signal (feature_discussion's "z좌표는 보조값으로
+  // 사용"): MediaPipe's z is depth relative to the hips, noisier than x/y,
+  // so this only ever backs up shoulderTilt/torsoRotationProxy, never
+  // stands alone as a rule condition.
+  const rawShoulderDepthAsymmetry =
+    shoulderWidth > 0 ? (leftShoulder.z - rightShoulder.z) / shoulderWidth : 0;
+
   // Head roll: angle of the eye line (fallback: ear line), same atan2
   // convention as shoulderTilt so a level head reads near 0.
   let rawHeadRoll: number | undefined;
@@ -227,6 +234,10 @@ export function toFrameFeature(
     previous?.headShoulderDistanceRatio,
   );
   const bodyCompressionRatio = smooth(rawBodyCompressionRatio, previous?.bodyCompressionRatio);
+  const shoulderDepthAsymmetry = smooth(
+    rawShoulderDepthAsymmetry,
+    previous?.shoulderDepthAsymmetry,
+  );
   const headRoll =
     rawHeadRoll !== undefined ? smooth(rawHeadRoll, previous?.headRoll) : undefined;
   const relativeShoulderScale =
@@ -269,6 +280,7 @@ export function toFrameFeature(
     headYRatio,
     headShoulderDistanceRatio,
     bodyCompressionRatio,
+    shoulderDepthAsymmetry,
     ...(headRoll !== undefined ? { headRoll } : {}),
     ...(relativeShoulderScale !== undefined ? { relativeShoulderScale } : {}),
     ...(handFaceDistance !== undefined ? { handFaceDistance } : {}),
