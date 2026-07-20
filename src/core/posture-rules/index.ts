@@ -16,15 +16,30 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // exaggerated turtle neck, headShoulderDistanceRatio's score came back
     // -13.54 — it shrinks (head visually drops toward the shoulder line
     // in 2D as it pushes toward the camera), the opposite of what the
-    // anyOf gate assumed — so only pitchProxy could ever satisfy it, and
-    // barely, requiring an extreme pose. faceToShoulderRatio alone was the
-    // clean, reliable signal (4.53 in the same test), so it's now the sole
-    // condition; the other two stay as supporting/informational only.
+    // anyOf gate assumed. faceToShoulderRatio alone is the clean, reliable
+    // signal for turtle neck (craning toward the camera) specifically —
+    // a pure head-down pitch with no lean-toward-camera component is a
+    // different posture (HEAD_DOWN below), not this one.
     required: [
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
+  },
+  {
+    postureType: "HEAD_DOWN",
+    requiredLandmarks: EYES,
+    // Distinct from FORWARD_HEAD: confirmed live that holding the head
+    // pitched down (chin toward chest, no craning toward the camera) read
+    // as normal, because faceToShoulderRatio doesn't respond to pure
+    // downward pitch. pitchProxy is the direct signal for that motion on
+    // its own. feature_discussion's #14 ("고개 숙여서 아래 보기") lists this
+    // as a *transient* action (writing, glancing down), but a *sustained*
+    // hold of the same pitch is a distinct posture worth its own alert
+    // rather than being silently absorbed into FORWARD_HEAD.
+    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.5, reference: "CALIBRATION" }],
+    supporting: ["headYRatio", "headShoulderDistanceRatio"],
+    reason: "head is pitched down relative to the calibrated direction",
   },
   // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
   // shoulderWidth — an absolute screen position divided by scale, not a
@@ -57,10 +72,22 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TURN",
     requiredLandmarks: EARS,
-    required: [],
+    // yawProxy (nose x-asymmetry between the ears) isn't roll-clean: tilting
+    // the head sideways swings the nose off the roll axis, so it moves in x
+    // too and yawProxy reacts even with zero actual turning. Confirmed
+    // live: a pure head tilt was showing up as HEAD_TURN. Excluding large
+    // headRoll here stops a tilt from also reading as a turn — same
+    // threshold as HEAD_TILT's own gate, so whichever HEAD_TILT would catch
+    // is excluded here instead of both firing and HEAD_TURN winning on
+    // array order (PostureRuleDetector takes matches[0], not the largest
+    // deviation, so ordering currently decides ties).
+    required: [{ feature: "headRoll", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" }],
+    // Raised from 2 -> 3/4: wanted this less twitchy than FORWARD_HEAD —
+    // needs a clearly bigger head turn before firing, not just glancing
+    // aside. Candidate value, not yet tuned against a development session.
     anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
+      { feature: "yawProxy", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
     ],
     supporting: ["headXRatio"],
     reason: "head direction differs from the calibrated direction",
@@ -68,7 +95,10 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
+    // Lowered from 2 -> 1.2, same reasoning as FORWARD_HEAD: wanted a
+    // moderate tilt to register, not just a pronounced one. Candidate
+    // value, not yet tuned against a development session.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 1.2, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
