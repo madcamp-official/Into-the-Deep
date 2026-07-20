@@ -1,4 +1,7 @@
 import type { DetectionEvent, FrameFeature, UserProfile } from "../../core/types";
+import { createInitialMADProfile } from "../../core/mad-profile";
+import { PostureRuleDetector } from "../../core/posture-rule-detector";
+import { V2MadUpdater } from "../../core/v2-mad-updater";
 import { getSessionMetadata, type SessionLogEntry } from "../recorder";
 import {
   DEFAULT_THRESHOLDS,
@@ -24,17 +27,34 @@ export function replay(
 
 function toFrameFeature(entry: SessionLogEntry): FrameFeature {
   return {
+    ...entry.features,
     timestamp: entry.timestamp,
     confidence: entry.confidence,
-    shoulderTilt: entry.features.shoulderTilt,
-    headXOffset: entry.features.headXOffset,
-    shoulderXOffset: entry.features.shoulderXOffset,
-    shoulderYOffset: entry.features.shoulderYOffset,
-    bodyScale: entry.features.bodyScale,
-    faceToShoulderRatio: entry.features.faceToShoulderRatio,
-    pitchProxy: entry.features.pitchProxy,
-    yawProxy: entry.features.yawProxy,
-    motionEnergy: entry.features.motionEnergy,
+  };
+}
+
+export function createRuleV0DetectorFromSession(entries: readonly SessionLogEntry[]): Detector {
+  const metadata = getSessionMetadata(entries);
+  if (!metadata) throw new Error("Session metadata is required to replay rule-based V0");
+  const detector = new PostureRuleDetector(
+    metadata.userProfile,
+    metadata.madProfile ?? createInitialMADProfile(),
+  );
+  return (entry) => detector.update(toFrameFeature(entry));
+}
+
+export function createV2DetectorFromSession(entries: readonly SessionLogEntry[]): Detector {
+  const metadata = getSessionMetadata(entries);
+  if (!metadata) throw new Error("Session metadata is required to replay V2");
+  let madProfile = metadata.madProfile ?? createInitialMADProfile();
+  const detector = new PostureRuleDetector(metadata.userProfile, madProfile);
+  const updater = new V2MadUpdater(madProfile);
+  return (entry) => {
+    const feature = toFrameFeature(entry);
+    const event = detector.update(feature);
+    madProfile = updater.update(feature, { matchedPosture: event.postureType });
+    detector.setMADProfile(madProfile);
+    return event;
   };
 }
 

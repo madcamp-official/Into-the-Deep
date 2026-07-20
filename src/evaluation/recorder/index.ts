@@ -1,6 +1,7 @@
 import type {
   CameraProfile,
   FrameFeature,
+  MADProfile,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
@@ -19,6 +20,7 @@ export interface SessionMarker {
 export interface SessionMetadata {
   userProfile: UserProfile;
   cameraProfile: CameraProfile;
+  madProfile?: MADProfile;
   profileCreatedAt: number;
 }
 
@@ -31,17 +33,7 @@ export interface SessionLogEntry {
   groundTruth: ScenarioLabel["label"];
   cameraState: string;
   confidence: number;
-  features: {
-    shoulderTilt: number;
-    headXOffset: number;
-    shoulderXOffset: number;
-    shoulderYOffset: number;
-    bodyScale: number;
-    faceToShoulderRatio?: number;
-    pitchProxy?: number;
-    yawProxy?: number;
-    motionEnergy: number;
-  };
+  features: Omit<FrameFeature, "timestamp" | "confidence">;
   markers?: SessionMarker[];
 }
 
@@ -84,6 +76,9 @@ export class SessionRecorder {
   ): void {
     if (!this.recording) return;
 
+    const features = Object.fromEntries(
+      Object.entries(feature).filter(([key]) => key !== "timestamp" && key !== "confidence"),
+    ) as Omit<FrameFeature, "timestamp" | "confidence">;
     const entry: SessionLogEntry = {
       timestamp: feature.timestamp,
       ...(this.entries.length === 0 && this.metadata
@@ -92,19 +87,7 @@ export class SessionRecorder {
       groundTruth,
       cameraState,
       confidence: feature.confidence,
-      features: {
-        shoulderTilt: feature.shoulderTilt,
-        headXOffset: feature.headXOffset,
-        shoulderXOffset: feature.shoulderXOffset,
-        shoulderYOffset: feature.shoulderYOffset,
-        bodyScale: feature.bodyScale,
-        ...(feature.faceToShoulderRatio !== undefined
-          ? { faceToShoulderRatio: feature.faceToShoulderRatio }
-          : {}),
-        ...(feature.pitchProxy !== undefined ? { pitchProxy: feature.pitchProxy } : {}),
-        ...(feature.yawProxy !== undefined ? { yawProxy: feature.yawProxy } : {}),
-        motionEnergy: feature.motionEnergy,
-      },
+      features,
     };
 
     if (this.pendingMarkers.length > 0) {
