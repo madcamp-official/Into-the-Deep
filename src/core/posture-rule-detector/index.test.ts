@@ -46,7 +46,7 @@ describe("PostureRuleDetector", () => {
   it("requires both yaw and horizontal head displacement for a head turn", () => {
     const profile = createPostureProfile();
     const matches = evaluatePostureRules(
-      createPostureFrame({ yawProxy: 0.18, headXRatio: 0.12 }),
+      createPostureFrame({ yawProxy: 0.22, headXRatio: 0.12, headRoll: 0 }),
       profile,
       createInitialMADProfile(),
       DEFAULT_POSTURE_RULES,
@@ -82,8 +82,8 @@ function createFrame(timestamp: number, headXRatio: number): FrameFeature {
 
 function createPostureProfile(): UserProfile {
   return {
-    originalCenters: { yawProxy: 0, headXRatio: 0 },
-    adaptiveCenters: { yawProxy: 0, headXRatio: 0 },
+    originalCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0 },
+    adaptiveCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0 },
     featureDeviations: {},
     calibrationDuration: 5000,
     validFrameCount: 100,
