@@ -86,9 +86,26 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   },
   {
     postureType: "ROUNDED_SHOULDERS",
-    requiredLandmarks: CORE,
-    required: [{ feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" }],
-    supporting: ["relativeShoulderScale", "faceToShoulderRatio", "shoulderTilt"],
+    // EYES, not just CORE: relativeShoulderScale (added below) needs eye
+    // distance, so the rule should defer (not silently fail to match) when
+    // eyes aren't reliable.
+    requiredLandmarks: EYES,
+    // shoulderWidthRatio alone (= raw shoulderWidth vs its calibration
+    // value) can't tell "shoulders rounded forward" apart from "moved
+    // farther from the camera" — both shrink shoulderWidth identically.
+    // Confirmed live: this rule fired as a false positive with no real
+    // rounding happening (same class of environment-vs-posture confound as
+    // shoulderXOffset/SIDE_SHIFT). relativeShoulderScale (shoulderWidth /
+    // face width) stays flat under a pure distance change since both
+    // shrink together, but drops when the shoulders actually narrow
+    // relative to a face that hasn't changed size — requiring it too
+    // (feature_discussion rule 11's actual "동일 방향" AND, which this rule
+    // had dropped) filters the distance-only case out.
+    required: [
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "relativeShoulderScale", operator: "LT", threshold: -1, reference: "CALIBRATION" },
+    ],
+    supporting: ["faceToShoulderRatio", "shoulderTilt"],
     reason: "shoulder shape is narrower than the calibrated posture",
   },
   {
