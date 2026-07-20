@@ -5,8 +5,18 @@ export interface FixedThresholds {
   headXOffsetRatio: number;
   bodyScaleIncreaseRatio: number;
   forwardHeadFaceRatioIncrease: number;
-  forwardHeadBodyScaleToleranceRatio: number;
-  forwardHeadPitchDeltaRatio: number;
+  // How much headShoulderDistanceRatio must grow from calibration for the
+  // head to count as "extended away from the shoulders" (turtle neck).
+  forwardHeadDistanceIncreaseRatio: number;
+  // How far headXRatio may drift from its calibration center and still
+  // count as "facing forward" — excludes rule 5 (head turn) rather than
+  // gating on bodyScale like the old design did (see forwardLean below for
+  // why that gate was wrong).
+  forwardHeadXRatioTolerance: number;
+  // forwardLeanProxy = faceToShoulderRatio delta ratio + weight * pitchProxy
+  // delta (feature_discussion's forwardLeanProxy, λ weight).
+  forwardLeanPitchWeight: number;
+  forwardLeanThreshold: number;
   yawProxyRatio: number;
   sustainedSeconds: number;
 }
@@ -16,8 +26,11 @@ export const DEFAULT_THRESHOLDS: FixedThresholds = {
   headXOffsetRatio: 0.2,
   bodyScaleIncreaseRatio: 0.25,
   forwardHeadFaceRatioIncrease: 0.025,
-  forwardHeadBodyScaleToleranceRatio: 0.3,
-  forwardHeadPitchDeltaRatio: 0.01,
+  // Candidate values, not yet tuned against a development session.
+  forwardHeadDistanceIncreaseRatio: 0.05,
+  forwardHeadXRatioTolerance: 0.08,
+  forwardLeanPitchWeight: 1,
+  forwardLeanThreshold: 0.04,
   // Candidate value, not yet tuned against a development session (plan.md
   // "정면 약 30도" is a rough qualitative guide, not a ratio in this unit).
   yawProxyRatio: 0.3,
@@ -86,6 +99,13 @@ export function evaluateV0(
     reason.push("forwardHead_skipped_low_confidence");
   }
 
+  const forwardLeanResult = evaluateForwardLean(feature, referenceCenters, thresholds);
+  if (forwardLeanResult === "BAD") {
+    reason.push("forwardLean");
+  } else if (forwardLeanResult === "SKIPPED_LOW_CONFIDENCE") {
+    reason.push("forwardLean_skipped_low_confidence");
+  }
+
   if (
     feature.yawProxy !== undefined &&
     exceedsAbsoluteThreshold(
@@ -107,16 +127,27 @@ export function evaluateV0(
   };
 }
 
-type ForwardHeadResult = "BAD" | "STABLE" | "SKIPPED_LOW_CONFIDENCE";
+type PostureRuleResult = "BAD" | "STABLE" | "SKIPPED_LOW_CONFIDENCE";
 
+// Turtle neck (feature_discussion rule 1): head extends forward/down away
+// from the shoulders while roughly still facing the camera. Used to gate
+// on bodyScale staying within tolerance of calibration, but real turtle
+// neck naturally brings the head (and a bit of the torso) closer to the
+// camera too — that gate was blocking genuine detections, confirmed live.
+// headShoulderDistanceRatio increasing + headXRatio staying put is a more
+// direct signal and doesn't fight against a normal bodyScale change.
 function evaluateForwardHead(
   feature: FrameFeature,
   referenceCenters: Record<string, number>,
   thresholds: FixedThresholds,
-): ForwardHeadResult {
-  const { faceToShoulderRatio, pitchProxy } = feature;
+): PostureRuleResult {
+  const { faceToShoulderRatio, headShoulderDistanceRatio, headXRatio } = feature;
 
-  if (faceToShoulderRatio === undefined || pitchProxy === undefined) {
+  if (
+    faceToShoulderRatio === undefined ||
+    headShoulderDistanceRatio === undefined ||
+    headXRatio === undefined
+  ) {
     return "SKIPPED_LOW_CONFIDENCE";
   }
 
@@ -126,18 +157,48 @@ function evaluateForwardHead(
       referenceCenters.faceToShoulderRatio,
       thresholds.forwardHeadFaceRatioIncrease,
     ) &&
-    withinRelativeTolerance(
-      feature.bodyScale,
-      referenceCenters.bodyScale,
-      thresholds.forwardHeadBodyScaleToleranceRatio,
+    exceedsIncreaseRatio(
+      headShoulderDistanceRatio,
+      referenceCenters.headShoulderDistanceRatio,
+      thresholds.forwardHeadDistanceIncreaseRatio,
     ) &&
-    exceedsPositiveDelta(
-      pitchProxy,
-      referenceCenters.pitchProxy,
-      thresholds.forwardHeadPitchDeltaRatio,
+    !exceedsAbsoluteThreshold(
+      headXRatio,
+      referenceCenters.headXRatio,
+      thresholds.forwardHeadXRatioTolerance,
     );
 
   return bad ? "BAD" : "STABLE";
+}
+
+// Forward lean / slouch (feature_discussion rule 4, "상체 앞으로 기울어짐"):
+// the face growing relative to the shoulders combined with pitching down,
+// same core signal the old forwardHead used — but as its own rule, not
+// gated on bodyScale staying put, since leaning the whole torso forward is
+// exactly what makes bodyScale grow.
+function evaluateForwardLean(
+  feature: FrameFeature,
+  referenceCenters: Record<string, number>,
+  thresholds: FixedThresholds,
+): PostureRuleResult {
+  const { faceToShoulderRatio, pitchProxy } = feature;
+
+  if (faceToShoulderRatio === undefined || pitchProxy === undefined) {
+    return "SKIPPED_LOW_CONFIDENCE";
+  }
+
+  const faceRatioDelta = ratioDelta(faceToShoulderRatio, referenceCenters.faceToShoulderRatio);
+  const pitchDelta = referenceCenters.pitchProxy === undefined
+    ? undefined
+    : pitchProxy - referenceCenters.pitchProxy;
+
+  if (faceRatioDelta === undefined || pitchDelta === undefined) {
+    return "SKIPPED_LOW_CONFIDENCE";
+  }
+
+  const forwardLeanProxy = faceRatioDelta + thresholds.forwardLeanPitchWeight * pitchDelta;
+
+  return forwardLeanProxy > thresholds.forwardLeanThreshold ? "BAD" : "STABLE";
 }
 
 export class FixedThresholdDetector {
@@ -210,26 +271,16 @@ function exceedsIncreaseRatio(
   return currentValue > referenceValue * (1 + increaseRatio);
 }
 
-function exceedsPositiveDelta(
+// Signed fractional change from the calibration reference — e.g. 0.03 means
+// "3% above calibration". Used for forwardLeanProxy, which needs the sign
+// (a person leaning back should not add to a forward-lean score).
+function ratioDelta(
   currentValue: number,
   referenceValue: number | undefined,
-  threshold: number,
-): boolean {
-  if (referenceValue === undefined) {
-    return false;
-  }
-
-  return currentValue - referenceValue > threshold;
-}
-
-function withinRelativeTolerance(
-  currentValue: number,
-  referenceValue: number | undefined,
-  toleranceRatio: number,
-): boolean {
+): number | undefined {
   if (referenceValue === undefined || referenceValue <= 0) {
-    return false;
+    return undefined;
   }
 
-  return Math.abs(currentValue - referenceValue) / referenceValue <= toleranceRatio;
+  return (currentValue - referenceValue) / referenceValue;
 }

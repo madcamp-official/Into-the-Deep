@@ -11,6 +11,11 @@ const PROFILE_FEATURES = [
   "faceToShoulderRatio",
   "pitchProxy",
   "yawProxy",
+  // Needed as calibration baselines for the forwardHead/forwardLean rules
+  // (fixed-threshold-detector) and the V2 drift score (personalized-detector).
+  "headXRatio",
+  "headShoulderDistanceRatio",
+  "bodyCompressionRatio",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {

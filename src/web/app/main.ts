@@ -39,6 +39,15 @@ import type {
   UserProfile,
 } from "../../core/types";
 
+// Shows which raw feature(s) tripped the alerting rule (e.g.
+// "faceToShoulderRatio, headShoulderDistanceRatio") rather than the posture
+// scenario name — matchedFeatures reflects only the first matched rule
+// (PostureRuleDetector.update), since that's the one driving state/alert.
+function describeMatchedFeatures(event: DetectionEvent | null): string {
+  if (!event?.matchedFeatures || event.matchedFeatures.length === 0) return "?";
+  return event.matchedFeatures.join(", ");
+}
+
 // How long a Calibration/기준 자세 업데이트 click collects frames before
 // buildUserProfile() runs. No camera-state validator exists yet (that's
 // B's Day3 CameraProfile work), so cameraState is logged as "UNKNOWN"
@@ -62,9 +71,18 @@ async function main() {
   canvas.height = 720;
   canvas.className = "camera-canvas";
 
-  const alertBanner = document.createElement("div");
-  alertBanner.className = "alert-banner alert-banner--idle";
-  alertBanner.textContent = "캘리브레이션 후 측정을 시작하세요";
+  const alertBannerRow = document.createElement("div");
+  alertBannerRow.className = "alert-banner-row";
+
+  const v0AlertBanner = document.createElement("div");
+  v0AlertBanner.className = "alert-banner alert-banner--idle";
+  v0AlertBanner.textContent = "V0: 캘리브레이션 후 측정을 시작하세요";
+
+  const v2AlertBanner = document.createElement("div");
+  v2AlertBanner.className = "alert-banner alert-banner--idle";
+  v2AlertBanner.textContent = "V2: 캘리브레이션 후 측정을 시작하세요";
+
+  alertBannerRow.append(v0AlertBanner, v2AlertBanner);
 
   const layout = document.createElement("main");
   layout.className = "app-layout";
@@ -145,7 +163,7 @@ async function main() {
 
   sidePanel.append(controls, sessionInstruction, status);
   layout.append(canvas, sidePanel);
-  app.append(video, layout, alertBanner);
+  app.append(video, layout, alertBannerRow);
   addLayoutStyles();
 
   const ctx = canvas.getContext("2d");
@@ -499,9 +517,13 @@ async function main() {
     URL.revokeObjectURL(url);
   };
 
-  function setAlertBanner(kind: "idle" | "unknown" | "good" | "bad", message: string): void {
-    alertBanner.className = `alert-banner alert-banner--${kind}`;
-    alertBanner.textContent = message;
+  function setAlertBanner(
+    banner: HTMLDivElement,
+    kind: "idle" | "unknown" | "good" | "bad",
+    message: string,
+  ): void {
+    banner.className = `alert-banner alert-banner--${kind}`;
+    banner.textContent = message;
   }
 
   const loop = () => {
@@ -519,7 +541,8 @@ async function main() {
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
-      setAlertBanner("unknown", describeUnreliableState(quality));
+      setAlertBanner(v0AlertBanner, "unknown", `V0: ${describeUnreliableState(quality)}`);
+      setAlertBanner(v2AlertBanner, "unknown", `V2: ${describeUnreliableState(quality)}`);
       requestAnimationFrame(loop);
       return;
     }
@@ -530,7 +553,8 @@ async function main() {
     previousFeature = feature;
 
     if (!feature) {
-      setAlertBanner("unknown", "UNKNOWN");
+      setAlertBanner(v0AlertBanner, "unknown", "V0: UNKNOWN");
+      setAlertBanner(v2AlertBanner, "unknown", "V2: UNKNOWN");
       requestAnimationFrame(loop);
       return;
     }
@@ -573,18 +597,21 @@ async function main() {
     }
 
     if (!postureDetector) {
-      setAlertBanner("idle", "캘리브레이션 후 측정을 시작하세요");
+      setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
+      setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
     } else {
-      const v0Alert = event?.alert ?? false;
-      const v2Alert = v2Event?.alert ?? false;
-      if (v0Alert || v2Alert) {
-        const sources = [v0Alert ? "V0" : null, v2Alert ? "V2" : null]
-          .filter((source): source is string => source !== null)
-          .join(", ");
-        const reason = v2Event?.reason.join(", ") || event?.reason.join(", ") || "";
-        setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
+      // V0/V2 are judged and shown independently — they can (and are
+      // expected to) disagree, that's the whole point of comparing them.
+      if (event?.alert) {
+        setAlertBanner(v0AlertBanner, "bad", `V0: ${describeMatchedFeatures(event)}`);
       } else {
-        setAlertBanner("good", "정상 자세입니다");
+        setAlertBanner(v0AlertBanner, "good", "V0: 정상 자세입니다");
+      }
+
+      if (v2Event?.alert) {
+        setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(v2Event)}`);
+      } else {
+        setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
     }
 
@@ -772,21 +799,25 @@ function addLayoutStyles(): void {
       }
     }
 
-    .alert-banner {
+    .alert-banner-row {
       position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
       z-index: 1000;
+      display: flex;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .alert-banner {
       box-sizing: border-box;
-      width: 100%;
+      flex: 1 1 50%;
       padding: 18px 24px;
       text-align: center;
       font-size: 18px;
       font-weight: 700;
       letter-spacing: 0.01em;
       color: #ffffff;
-      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
       transition: background-color 150ms ease;
     }
 
