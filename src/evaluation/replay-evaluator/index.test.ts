@@ -26,12 +26,18 @@ describe("createV0Detector", () => {
       detector,
     );
 
+    // reason always carries forwardHead_skipped_low_confidence here because
+    // SessionLogEntry.features doesn't yet record headXRatio/
+    // headShoulderDistanceRatio (recorder still only logs the old field
+    // set) — evaluateForwardHead can't run without them. Not this test's
+    // concern; see the recorder/SessionLogEntry gap flagged separately.
+    const skip = "forwardHead_skipped_low_confidence";
     expect(events).toMatchObject([
-      { timestamp: 0, state: "STABLE", alert: false, reason: [] },
-      { timestamp: 1000, state: "BAD", alert: false, reason: ["shoulderTilt"] },
-      { timestamp: 2490, state: "BAD", alert: false, reason: ["shoulderTilt"] },
-      { timestamp: 2500, state: "BAD", alert: true, reason: ["shoulderTilt"] },
-      { timestamp: 3000, state: "STABLE", alert: false, reason: [] },
+      { timestamp: 0, state: "STABLE", alert: false, reason: [skip] },
+      { timestamp: 1000, state: "BAD", alert: false, reason: ["shoulderTilt", skip] },
+      { timestamp: 2490, state: "BAD", alert: false, reason: ["shoulderTilt", skip] },
+      { timestamp: 2500, state: "BAD", alert: true, reason: ["shoulderTilt", skip] },
+      { timestamp: 3000, state: "STABLE", alert: false, reason: [skip] },
     ]);
   });
 });

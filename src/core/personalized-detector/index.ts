@@ -18,6 +18,12 @@ const V1_FEATURES = [
   "faceToShoulderRatio",
   "pitchProxy",
   "yawProxy",
+  // headShoulderDistanceRatio catches turtle neck (head extending away from
+  // shoulders); bodyCompressionRatio catches slouching/sitting low (head
+  // compressing toward shoulders) — both from feature_discussion, computed
+  // by feature-normalizer and now profiled by profile-builder.
+  "headShoulderDistanceRatio",
+  "bodyCompressionRatio",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 type V1Feature = (typeof V1_FEATURES)[number];
@@ -45,6 +51,8 @@ export const DEFAULT_PERSONALIZED_THRESHOLDS: PersonalizedThresholds = {
     faceToShoulderRatio: 0.005,
     pitchProxy: 0.005,
     yawProxy: 0.03,
+    headShoulderDistanceRatio: 0.02,
+    bodyCompressionRatio: 0.02,
   },
 };
 

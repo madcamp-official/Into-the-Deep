@@ -11,6 +11,8 @@ const referenceCenters: Record<string, number> = {
   faceToShoulderRatio: 0.28,
   pitchProxy: 0.2,
   yawProxy: 0,
+  headXRatio: 0,
+  headShoulderDistanceRatio: 0.5,
 };
 
 describe("evaluateV0", () => {
@@ -25,6 +27,8 @@ describe("evaluateV0", () => {
       bodyScale: 1.02,
       faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
       pitchProxy: referenceCenters.pitchProxy,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
       motionEnergy: 0.03,
     };
 
@@ -47,6 +51,8 @@ describe("evaluateV0", () => {
       bodyScale: 1,
       faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
       pitchProxy: referenceCenters.pitchProxy,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
       motionEnergy: 0.1,
     };
 
@@ -73,6 +79,8 @@ describe("evaluateV0", () => {
       bodyScale: 1,
       faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
       pitchProxy: referenceCenters.pitchProxy,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
       motionEnergy: 0.1,
     };
 
@@ -84,7 +92,11 @@ describe("evaluateV0", () => {
     });
   });
 
-  it("flags BAD with forwardHead when face ratio and pitch increase without body scale drift", () => {
+  it("flags BAD with forwardHead when face ratio and headShoulderDistanceRatio grow, even with a big bodyScale shift", () => {
+    // bodyScale shifting a lot used to block forwardHead entirely (old
+    // bodyScale-tolerance gate) — real turtle neck naturally brings the
+    // head/torso a bit closer to the camera too, so that gate was wrong.
+    // Confirmed live: it was blocking genuine detections.
     const feature: FrameFeature = {
       timestamp: 4,
       confidence: 0.9,
@@ -92,58 +104,96 @@ describe("evaluateV0", () => {
       headXOffset: 0,
       shoulderXOffset: 0,
       shoulderYOffset: 0,
-      bodyScale: 1.05,
+      bodyScale: referenceCenters.bodyScale * 1.35,
       faceToShoulderRatio:
         referenceCenters.faceToShoulderRatio *
         (1 + DEFAULT_THRESHOLDS.forwardHeadFaceRatioIncrease + 0.02),
-      pitchProxy:
-        referenceCenters.pitchProxy +
-        DEFAULT_THRESHOLDS.forwardHeadPitchDeltaRatio +
-        0.02,
-      motionEnergy: 0.1,
-    };
-
-    expect(evaluateV0(feature, referenceCenters)).toEqual({
-      timestamp: 4,
-      state: "BAD",
-      alert: true,
-      reason: ["forwardHead"],
-    });
-  });
-
-  it("does not flag forwardHead when body scale changes too much", () => {
-    const feature: FrameFeature = {
-      timestamp: 5,
-      confidence: 0.9,
-      shoulderTilt: 0,
-      headXOffset: 0,
-      shoulderXOffset: 0,
-      shoulderYOffset: 0,
-      bodyScale:
-        referenceCenters.bodyScale *
-        (1 + DEFAULT_THRESHOLDS.forwardHeadBodyScaleToleranceRatio + 0.02),
-      faceToShoulderRatio:
-        referenceCenters.faceToShoulderRatio *
-        (1 + DEFAULT_THRESHOLDS.forwardHeadFaceRatioIncrease + 0.02),
-      pitchProxy:
-        referenceCenters.pitchProxy +
-        DEFAULT_THRESHOLDS.forwardHeadPitchDeltaRatio +
-        0.02,
+      headShoulderDistanceRatio:
+        referenceCenters.headShoulderDistanceRatio *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadDistanceIncreaseRatio + 0.02),
+      headXRatio: referenceCenters.headXRatio,
+      pitchProxy: referenceCenters.pitchProxy,
       motionEnergy: 0.1,
     };
 
     const event = evaluateV0(feature, referenceCenters);
 
-    expect(event).toEqual({
+    expect(event.state).toBe("BAD");
+    expect(event.alert).toBe(true);
+    expect(event.reason).toContain("forwardHead");
+  });
+
+  it("does not flag forwardHead when headXRatio has drifted too far (head turn, not turtle neck)", () => {
+    const feature: FrameFeature = {
       timestamp: 5,
-      state: "BAD",
-      alert: true,
-      reason: ["bodyScale"],
-    });
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale: 1,
+      faceToShoulderRatio:
+        referenceCenters.faceToShoulderRatio *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadFaceRatioIncrease + 0.001),
+      headShoulderDistanceRatio:
+        referenceCenters.headShoulderDistanceRatio *
+        (1 + DEFAULT_THRESHOLDS.forwardHeadDistanceIncreaseRatio + 0.02),
+      headXRatio:
+        referenceCenters.headXRatio + DEFAULT_THRESHOLDS.forwardHeadXRatioTolerance + 0.05,
+      pitchProxy: referenceCenters.pitchProxy,
+      motionEnergy: 0.1,
+    };
+
+    const event = evaluateV0(feature, referenceCenters);
+
     expect(event.reason).not.toContain("forwardHead");
   });
 
-  it("marks forwardHead as skipped (not BAD) when faceToShoulderRatio/pitchProxy are unavailable", () => {
+  it("flags BAD with forwardLean when face ratio and pitch shift together (whole torso leaning forward)", () => {
+    const feature: FrameFeature = {
+      timestamp: 8,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      // Leaning the whole torso in naturally grows bodyScale too — this
+      // shouldn't (and per the test above, doesn't) block detection.
+      bodyScale: referenceCenters.bodyScale * 1.3,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio * 1.02,
+      pitchProxy: referenceCenters.pitchProxy + 0.03,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
+      motionEnergy: 0.1,
+    };
+
+    const event = evaluateV0(feature, referenceCenters);
+
+    expect(event.reason).toContain("forwardLean");
+  });
+
+  it("does not flag forwardLean when face ratio/pitch move the opposite way (leaning back)", () => {
+    const feature: FrameFeature = {
+      timestamp: 9,
+      confidence: 0.9,
+      shoulderTilt: 0,
+      headXOffset: 0,
+      shoulderXOffset: 0,
+      shoulderYOffset: 0,
+      bodyScale: 1,
+      faceToShoulderRatio: referenceCenters.faceToShoulderRatio * 0.98,
+      pitchProxy: referenceCenters.pitchProxy - 0.03,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
+      motionEnergy: 0.1,
+    };
+
+    const event = evaluateV0(feature, referenceCenters);
+
+    expect(event.reason).not.toContain("forwardLean");
+  });
+
+  it("marks forwardHead/forwardLean as skipped (not BAD) when the underlying features are unavailable", () => {
     // Mirrors what feature-normalizer now produces when eyesReliable is
     // false (e.g. eyes occluded/turned away) — faceToShoulderRatio and
     // pitchProxy come back undefined rather than a garbage value.
@@ -162,7 +212,10 @@ describe("evaluateV0", () => {
 
     expect(event.state).toBe("STABLE");
     expect(event.alert).toBe(false);
-    expect(event.reason).toEqual(["forwardHead_skipped_low_confidence"]);
+    expect(event.reason).toEqual([
+      "forwardHead_skipped_low_confidence",
+      "forwardLean_skipped_low_confidence",
+    ]);
   });
 
   it("flags BAD with yawProxy when the head turns past the threshold", () => {
@@ -176,6 +229,8 @@ describe("evaluateV0", () => {
       bodyScale: 1,
       faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
       pitchProxy: referenceCenters.pitchProxy,
+      headXRatio: referenceCenters.headXRatio,
+      headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
       yawProxy: referenceCenters.yawProxy + DEFAULT_THRESHOLDS.yawProxyRatio + 0.05,
       motionEnergy: 0.1,
     };
@@ -254,6 +309,8 @@ function createStableFrame(timestamp: number): FrameFeature {
     bodyScale: 1,
     faceToShoulderRatio: referenceCenters.faceToShoulderRatio,
     pitchProxy: referenceCenters.pitchProxy,
+    headXRatio: referenceCenters.headXRatio,
+    headShoulderDistanceRatio: referenceCenters.headShoulderDistanceRatio,
     motionEnergy: 0.03,
   };
 }
