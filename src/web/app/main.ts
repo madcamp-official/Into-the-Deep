@@ -33,44 +33,17 @@ import type {
   CameraRawFeature,
   DetectionEvent,
   FrameFeature,
-  PostureType,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
 
-// Korean labels for PostureRuleDetector's PostureType (feature_discussion's
-// numbered posture list), used to show which posture scenario triggered an
-// alert instead of the raw enum/reason text.
-const POSTURE_TYPE_LABELS: Record<PostureType, string> = {
-  FORWARD_HEAD: "거북목",
-  ARMREST_LEAN: "팔걸이에 기대는 자세",
-  SIDE_SHIFT: "상체 좌우 이동",
-  FORWARD_LEAN: "상체 앞으로 기울어짐 (허리 구부정)",
-  HEAD_TURN: "고개 돌림",
-  HEAD_TILT: "고개 옆으로 갸우뚱",
-  LOW_SITTING: "눕듯이 앉기",
-  CHIN_REST: "턱 괴기",
-  HEAD_BACK: "고개 뒤로 젖힘",
-  SHOULDER_ASYMMETRY: "어깨 비대칭",
-  ROUNDED_SHOULDERS: "어깨 말림",
-  BACKWARD_LEAN: "상체 뒤로 기대기",
-  CHIN_TUCK: "턱 뒤로 당기기",
-  TORSO_TWIST: "상체 좌우 비틂",
-  SHOULDERS_ONLY_TWIST: "머리는 정면, 어깨만 회전",
-};
-
-// event.reason entries are "POSTURE_TYPE: explanation" (PostureRuleDetector)
-// — this pulls out just the posture type(s) and renders them in Korean, so
-// the banner reads as "어떤 자세인지" rather than raw enum/English text.
-function describePostureReasons(reason: readonly string[]): string {
-  if (reason.length === 0) return "?";
-
-  const labels = reason.map((entry) => {
-    const [type] = entry.split(":");
-    return POSTURE_TYPE_LABELS[type as PostureType] ?? type;
-  });
-
-  return [...new Set(labels)].join(", ");
+// Shows which raw feature(s) tripped the alerting rule (e.g.
+// "faceToShoulderRatio, headShoulderDistanceRatio") rather than the posture
+// scenario name — matchedFeatures reflects only the first matched rule
+// (PostureRuleDetector.update), since that's the one driving state/alert.
+function describeMatchedFeatures(event: DetectionEvent | null): string {
+  if (!event?.matchedFeatures || event.matchedFeatures.length === 0) return "?";
+  return event.matchedFeatures.join(", ");
 }
 
 // How long a Calibration/기준 자세 업데이트 click collects frames before
@@ -582,13 +555,13 @@ async function main() {
       // V0/V2 are judged and shown independently — they can (and are
       // expected to) disagree, that's the whole point of comparing them.
       if (event?.alert) {
-        setAlertBanner(v0AlertBanner, "bad", `V0: ${describePostureReasons(event.reason)}`);
+        setAlertBanner(v0AlertBanner, "bad", `V0: ${describeMatchedFeatures(event)}`);
       } else {
         setAlertBanner(v0AlertBanner, "good", "V0: 정상 자세입니다");
       }
 
       if (v2Event?.alert) {
-        setAlertBanner(v2AlertBanner, "bad", `V2: ${describePostureReasons(v2Event.reason)}`);
+        setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(v2Event)}`);
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
