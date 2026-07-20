@@ -2,13 +2,19 @@ import { PoseLandmarker, type NormalizedLandmark } from "@mediapipe/tasks-vision
 import { LANDMARK_INDEX } from "../camera-adapter/pose-landmarker";
 
 // Upper-body landmarks only: full face outline (indices 0-10: nose, eyes,
-// ears, mouth corners) plus both shoulders. Arms/hips/legs are excluded —
-// the MVP's supported framing (plan.md section 4) only guarantees face +
-// shoulders are visible, so drawing the rest is just noise.
+// ears, mouth corners), both shoulders, and the shoulder->elbow->wrist arm
+// chain (hand-relative features like handFaceDistance need the wrists
+// visible on screen too). Hips/legs are still excluded — the MVP's
+// supported framing (plan.md section 4) only guarantees face + shoulders +
+// arms are visible, so drawing the rest is just noise.
 const VISIBLE_LANDMARK_INDICES = new Set<number>([
   ...Array.from({ length: 11 }, (_, i) => i),
   LANDMARK_INDEX.leftShoulder,
   LANDMARK_INDEX.rightShoulder,
+  LANDMARK_INDEX.leftElbow,
+  LANDMARK_INDEX.rightElbow,
+  LANDMARK_INDEX.leftWrist,
+  LANDMARK_INDEX.rightWrist,
 ]);
 
 // Both draw functions mirror horizontally (selfie view) purely for display —

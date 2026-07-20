@@ -5,11 +5,16 @@ import type {
   UserProfile,
 } from "../types";
 
+// shoulderXOffset/shoulderYOffset deliberately excluded — they're
+// shoulderCenter/shoulderWidth, an absolute screen position divided by
+// scale rather than a difference of two points, so sliding a chair back
+// shrinks shoulderWidth while shoulderCenter barely moves and the ratio
+// grows with zero real posture change (same bug fixed in V0's
+// fixed-threshold-detector; reproduced live via chair movement with the
+// camera untouched).
 const V1_FEATURES = [
   "shoulderTilt",
   "headXOffset",
-  "shoulderXOffset",
-  "shoulderYOffset",
   "faceToShoulderRatio",
   "pitchProxy",
   "yawProxy",
@@ -37,8 +42,6 @@ export const DEFAULT_PERSONALIZED_THRESHOLDS: PersonalizedThresholds = {
   minimumDeviations: {
     shoulderTilt: 1,
     headXOffset: 0.02,
-    shoulderXOffset: 0.02,
-    shoulderYOffset: 0.02,
     faceToShoulderRatio: 0.005,
     pitchProxy: 0.005,
     yawProxy: 0.03,

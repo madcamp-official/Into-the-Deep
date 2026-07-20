@@ -87,7 +87,11 @@ export interface FrameFeature {
   motionEnergy: number;
 
   // New relative posture features. They remain optional until the input
-  // pipeline supplies the corresponding landmarks reliably.
+  // pipeline supplies the corresponding landmarks reliably. Additive only —
+  // headXOffset/shoulderXOffset/shoulderYOffset/bodyScale above stay in
+  // place since B/C's detectors, profile-builder, and evaluation/* already
+  // key off them; renaming or removing them needs a team sync first per
+  // need_discussion #1.
   shoulderWidth?: number;
   shoulderCenterX?: number;
   shoulderCenterY?: number;
@@ -139,6 +143,17 @@ export interface CameraProfile {
   faceToShoulderRatio: number;
   yawProxy: number;
   pitchProxy: number;
+}
+
+// Raw camera-relative deltas (A's job — computed straight from
+// CameraRawFeature vs the stored CameraProfile), not yet a VALID/ADJUSTED/
+// RECALIBRATION_REQUIRED judgment. That judgment (CameraAssessment) is B's.
+export interface CameraDelta {
+  timestamp: number;
+  globalScaleDelta: number;
+  globalTranslationX: number;
+  globalTranslationY: number;
+  correctedYaw: number;
 }
 
 export interface CameraAssessment {
@@ -227,6 +242,9 @@ export interface LandmarkQuality {
   reliable: boolean;
   eyesReliable: boolean;
   earsReliable: boolean;
+  wristsReliable: boolean;
+  landmarkCoverage: number;
+  occlusionRate: number;
   missingLandmarks?: string[];
   reasons?: string[];
   reliableLandmarks?: LandmarkName[];

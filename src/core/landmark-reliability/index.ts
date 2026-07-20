@@ -4,16 +4,36 @@ import type { LandmarkName, LandmarkQuality } from "../types";
 
 export const RELIABILITY_THRESHOLDS = {
   minConfidence: 0.5,
-  // Separate constants (not reuses of minConfidence) so eye/ear sensitivity
-  // can be tuned independently later — see the forwardHead/yawProxy review
-  // that flagged eye/ear landmarks as never being visibility-checked.
+  // Separate constants (not reuses of minConfidence) so eye/ear/wrist
+  // sensitivity can be tuned independently later — see the
+  // forwardHead/yawProxy review that flagged eye/ear landmarks as never
+  // being visibility-checked.
   eyeMinConfidence: 0.5,
   earMinConfidence: 0.5,
+  // Wrists back hand-relative features (handFaceDistance,
+  // handShoulderDistance per feature_discussion) — elbows are deliberately
+  // not tracked per need_discussion's "팔꿈치 없애기" decision.
+  wristMinConfidence: 0.5,
   // Distance from the 0..1 frame edge a landmark must clear to count as
   // "in frame" — a small margin so partially-clipped shoulders/face
   // register as unreliable before they fully leave the image.
   frameMargin: 0.02,
 };
+
+// Landmarks tracked for landmarkCoverage/occlusionRate (feature_discussion):
+// the full set A's features draw on, beyond just the required nose/
+// shoulders.
+const TRACKED_LANDMARKS = [
+  LANDMARK_INDEX.nose,
+  LANDMARK_INDEX.leftEye,
+  LANDMARK_INDEX.rightEye,
+  LANDMARK_INDEX.leftEar,
+  LANDMARK_INDEX.rightEar,
+  LANDMARK_INDEX.leftShoulder,
+  LANDMARK_INDEX.rightShoulder,
+  LANDMARK_INDEX.leftWrist,
+  LANDMARK_INDEX.rightWrist,
+] as const;
 
 // Day2 draft of the Reliability Filter (plan.md section 8). Frames that
 // fail this check should be treated as UNKNOWN by downstream detectors,
@@ -30,6 +50,8 @@ export function assessLandmarkQuality(
   const rightEye = landmarks?.[LANDMARK_INDEX.rightEye];
   const leftEar = landmarks?.[LANDMARK_INDEX.leftEar];
   const rightEar = landmarks?.[LANDMARK_INDEX.rightEar];
+  const leftWrist = landmarks?.[LANDMARK_INDEX.leftWrist];
+  const rightWrist = landmarks?.[LANDMARK_INDEX.rightWrist];
 
   const personPresent = Boolean(nose && leftShoulder && rightShoulder);
   if (!personPresent || !nose || !leftShoulder || !rightShoulder) {
@@ -42,6 +64,9 @@ export function assessLandmarkQuality(
       reliable: false,
       eyesReliable: false,
       earsReliable: false,
+      wristsReliable: false,
+      landmarkCoverage: 0,
+      occlusionRate: 0,
       reliableLandmarks: [],
       unreliableLandmarks: ["nose", "leftShoulder", "rightShoulder"],
     };
@@ -60,6 +85,31 @@ export function assessLandmarkQuality(
     isVisible(rightEye, RELIABILITY_THRESHOLDS.eyeMinConfidence);
   const earsReliable = isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
     isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
+  // Unlike eyes/ears (symmetric pair, both needed for one feature), hand
+  // features only need whichever single wrist is near the face/shoulder —
+  // e.g. resting a chin on one hand leaves the other arm off on a desk or
+  // out of frame, which shouldn't disqualify the gesture.
+  const wristsReliable = isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
+    isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
+
+  // landmarkCoverage: how much of the tracked landmark set MediaPipe both
+  // reports *and* trusts (visibility above threshold) this frame.
+  // occlusionRate: of the landmarks MediaPipe reports at all, how many are
+  // present but not trustworthy (hidden by hair/hand/turned away) — MediaPipe
+  // always fills every index once a person is detected, so "present" alone
+  // doesn't mean visible.
+  const trackedPoints = TRACKED_LANDMARKS.map((index) => landmarks?.[index]);
+  const presentPoints = trackedPoints.filter(
+    (point): point is NormalizedLandmark => point !== undefined,
+  );
+  const visiblePoints = presentPoints.filter(
+    (point) => point.visibility >= RELIABILITY_THRESHOLDS.minConfidence,
+  );
+  const landmarkCoverage = visiblePoints.length / TRACKED_LANDMARKS.length;
+  const occlusionRate =
+    presentPoints.length > 0
+      ? (presentPoints.length - visiblePoints.length) / presentPoints.length
+      : 0;
 
   const landmarkChecks: Array<{
     name: LandmarkName;
@@ -102,6 +152,9 @@ export function assessLandmarkQuality(
     reliable,
     eyesReliable,
     earsReliable,
+    wristsReliable,
+    landmarkCoverage,
+    occlusionRate,
     reliableLandmarks,
     unreliableLandmarks,
   };
