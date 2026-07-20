@@ -3,8 +3,6 @@ import type { FrameFeature, DetectionEvent } from "../types";
 export interface FixedThresholds {
   shoulderTiltDeg: number;
   headXOffsetRatio: number;
-  shoulderXOffsetRatio: number;
-  shoulderYOffsetRatio: number;
   bodyScaleIncreaseRatio: number;
   forwardHeadFaceRatioIncrease: number;
   forwardHeadBodyScaleToleranceRatio: number;
@@ -16,8 +14,6 @@ export interface FixedThresholds {
 export const DEFAULT_THRESHOLDS: FixedThresholds = {
   shoulderTiltDeg: 8,
   headXOffsetRatio: 0.2,
-  shoulderXOffsetRatio: 0.15,
-  shoulderYOffsetRatio: 0.18,
   bodyScaleIncreaseRatio: 0.25,
   forwardHeadFaceRatioIncrease: 0.025,
   forwardHeadBodyScaleToleranceRatio: 0.3,
@@ -55,25 +51,18 @@ export function evaluateV0(
     reason.push("headXOffset");
   }
 
-  if (
-    exceedsAbsoluteThreshold(
-      feature.shoulderXOffset,
-      referenceCenters.shoulderXOffset,
-      thresholds.shoulderXOffsetRatio,
-    )
-  ) {
-    reason.push("shoulderXOffset");
-  }
-
-  if (
-    exceedsAbsoluteThreshold(
-      feature.shoulderYOffset,
-      referenceCenters.shoulderYOffset,
-      thresholds.shoulderYOffsetRatio,
-    )
-  ) {
-    reason.push("shoulderYOffset");
-  }
+  // shoulderXOffset/shoulderYOffset checks were removed here (used to flag
+  // BAD on their own): those two fields are shoulderCenter/shoulderWidth —
+  // an *absolute* screen position divided by scale, not a difference of two
+  // points. Sliding a chair straight back shrinks shoulderWidth while
+  // shoulderCenter barely moves, so the ratio grows even though posture
+  // never changed — confirmed live (moving the chair back with the camera
+  // untouched triggered a false BAD via shoulderYOffset). headXOffset above
+  // doesn't have this problem since it's already a difference
+  // (nose.x - shoulderCenterX) before dividing by shoulderWidth, so
+  // translation cancels out. The thing shoulderXOffset/shoulderYOffset were
+  // trying to catch (shoulders drifting in frame) is a camera/chair-position
+  // signal, not posture — that's CameraDelta.globalTranslationX/Y's job now.
 
   if (
     exceedsIncreaseRatio(
