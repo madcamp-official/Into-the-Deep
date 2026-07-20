@@ -52,12 +52,15 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TURN",
     requiredLandmarks: EARS,
-    required: [],
+    // yawProxy alone is noisy when the head is partially occluded or the
+    // camera is slightly off-axis. Require a matching horizontal head shift
+    // so unrelated posture changes do not become HEAD_TURN.
+    required: [{ feature: "headXRatio", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" }],
     anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+      { feature: "yawProxy", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
     ],
-    supporting: ["headXRatio"],
+    supporting: ["headXRatio", "yawProxy"],
     reason: "head direction differs from the calibrated direction",
   },
   {

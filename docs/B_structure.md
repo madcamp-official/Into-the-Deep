@@ -256,3 +256,16 @@ sample FrameFeature[]
   -> evaluateV0()
   -> readable result in console or tests
 ```
+
+## Movement Context
+
+- Done: browser-side background edge samples provide a lightweight
+  `backgroundMotion` signal for camera movement suspicion.
+- Done: `MovementClassifier` compares shoulder translation, relative head and
+  shoulder changes, shoulder tilt, and motion onset order.
+- Done: the live status panel and recorded `FrameFeature` expose one of
+  `CAMERA_MOVEMENT`, `ARMREST_LEAN`, `SIDE_SHIFT`, `CHAIR_MOVEMENT`, or
+  `UNKNOWN`.
+- Limitation: a perfectly rigid side shift and a chair movement can still be
+  visually identical without a chair/body landmark or an operator marker, so
+  the classifier must be validated with real sessions before enabling alerts.

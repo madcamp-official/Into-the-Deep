@@ -30,6 +30,14 @@ export type PostureType =
   | "TORSO_TWIST"
   | "SHOULDERS_ONLY_TWIST";
 
+export type MovementContext =
+  | "NONE"
+  | "CAMERA_MOVEMENT"
+  | "ARMREST_LEAN"
+  | "SIDE_SHIFT"
+  | "CHAIR_MOVEMENT"
+  | "UNKNOWN";
+
 export type PostureFeatureName =
   | "shoulderTilt"
   | "headXOffset"
@@ -124,6 +132,7 @@ export interface FrameFeature {
   cameraPitchProxy?: number;
   backgroundMotion?: number;
   backgroundTransformConfidence?: number;
+  movementContext?: MovementContext;
   landmarkCoverage?: number;
   landmarkConfidence?: number;
 }
