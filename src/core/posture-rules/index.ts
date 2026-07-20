@@ -20,11 +20,11 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // barely, requiring an extreme pose. faceToShoulderRatio alone was the
     // clean, reliable signal (4.53 in the same test), so it's now the sole
     // condition; the other two stay as supporting/informational only.
-    // Lowered from 2 -> 1.2: wanted to catch turtle neck on a small lean,
-    // not just a pronounced one. Candidate value, not yet tuned against a
-    // development session.
+    // Lowered from 2 -> 1.5 (tried 1.2 live, too sensitive): wanted to
+    // catch turtle neck on a small lean without over-triggering. Candidate
+    // value, not yet tuned against a development session.
     required: [
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -74,7 +74,10 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
+    // Lowered from 2 -> 1.2, same reasoning as FORWARD_HEAD: wanted a
+    // moderate tilt to register, not just a pronounced one. Candidate
+    // value, not yet tuned against a development session.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 1.2, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
