@@ -306,3 +306,55 @@ describe("toFrameFeature chair-movement invariance", () => {
     expect(movedFeature.bodyScale).toBeCloseTo(baseFeature.bodyScale * 0.7, 6);
   });
 });
+
+// posture-rule-detector normalizes every CALIBRATION-reference feature
+// generically as (current - profile.originalCenters[feature]) / MAD, so
+// these three are deliberately raw/undelta'd — the tests below check the
+// raw formula, not a pre-subtracted value.
+describe("toFrameFeature derived posture-rule features", () => {
+  it("computes correctedYaw as the same raw value as yawProxy", () => {
+    const feature = toFrameFeature(createLandmarks(), 0);
+
+    expect(feature?.correctedYaw).toBeDefined();
+    expect(feature?.correctedYaw).toBeCloseTo(feature?.yawProxy ?? NaN, 10);
+  });
+
+  it("omits correctedYaw when yawProxy is unavailable (ears unreliable)", () => {
+    const landmarks = createLandmarks({
+      leftEar: point(0.45, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+      rightEar: point(0.55, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    expect(feature?.yawProxy).toBeUndefined();
+    expect(feature?.correctedYaw).toBeUndefined();
+  });
+
+  it("computes forwardLeanProxy as faceToShoulderRatio + pitchProxy", () => {
+    const feature = toFrameFeature(createLandmarks(), 0);
+
+    expect(feature?.forwardLeanProxy).toBeDefined();
+    expect(feature?.forwardLeanProxy).toBeCloseTo(
+      (feature?.faceToShoulderRatio ?? NaN) + (feature?.pitchProxy ?? NaN),
+      10,
+    );
+  });
+
+  it("omits forwardLeanProxy when faceToShoulderRatio/pitchProxy are unavailable (eyes unreliable)", () => {
+    const landmarks = createLandmarks({
+      leftEye: point(0.48, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+      rightEye: point(0.52, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    expect(feature?.forwardLeanProxy).toBeUndefined();
+  });
+
+  it("computes shoulderWidthRatio as the same raw value as bodyScale", () => {
+    const feature = toFrameFeature(createLandmarks(), 0);
+
+    expect(feature?.shoulderWidthRatio).toBeCloseTo(feature?.bodyScale ?? NaN, 10);
+  });
+});

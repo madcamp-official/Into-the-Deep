@@ -20,6 +20,7 @@ export type PostureType =
   | "FORWARD_LEAN"
   | "HEAD_TURN"
   | "HEAD_TILT"
+  | "HEAD_DOWN"
   | "LOW_SITTING"
   | "CHIN_REST"
   | "HEAD_BACK"
