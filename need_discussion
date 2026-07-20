@@ -1,0 +1,83 @@
+`feature_discussion`의 feature 이름과 계산 방식이 확정되었다고 가정하면, A·B·C가 작업 전에 추가로 합의할 내용은 다음입니다.
+
+1. 공통 타입 계약
+
+- `FrameFeature`에 어떤 필드를 필수로 둘지
+    -> feature_discussion 에 나온 거 가급적 다 넣기
+- 손·팔꿈치·z좌표처럼 불안정한 값은 `undefined`를 허용할지
+    -> 얘는 좀 합의가 필요할 듯
+    : 팔꿈치 없애기. 턱괴기의 경우, 손목 - 어깨와 얼굴 거리 모두 고려
+    : 랜드마크가 없거나 불안정한 경우, 판단 보류. 랜드마크가 돌아오면 판단
+- `UserProfile`, `MADProfile`, `PostureRule`, `DetectionEvent` 구조 
+    -> 이건 AI가 알아서 잘 해줄 듯? 
+- 좌표·각도·비율의 단위 
+    -> 얘도 그닥 
+- timestamp 단위
+    -> 얘도 알아서
+
+2. confidence와 UNKNOWN 기준 -> A 담당
+
+- `landmarkConfidence`: 개별 landmark의 신뢰도
+    -> A가 우선 정하고 프레임워크 나오면 수정하는 방향으로
+- `confidence`: 한 프레임 전체의 신뢰도
+- 전체 confidence 계산 방식
+- 예: 필수 landmark 중 최솟값을 frame confidence로 사용할지
+- 어떤 조건에서 `UNKNOWN` 또는 판정 보류로 처리할지
+
+3. 자세별 rule 조건
+
+각 자세에 대해 다음을 정해야 합니다.
+
+- 사용 feature -> 이미 거의 정해짐 
+- feature 조건의 AND/OR 관계 -> feature_discussion 확인
+- threshold 기준 -> development session 하면서 적정값을 찾아야 함 
+- 여러 자세가 동시에 매칭될 때 우선순위 -> 범위를 많이 벗어난 자세 순 
+- `postureType`, `matchedFeatures`, `reason` 문구 -> AI 가 잘 해줌 
+
+예를 들어 거북목이 `faceToShoulderRatio` 하나만 넘으면 성립하는지, `pitchProxy`까지 함께 넘어야 하는지를 합의해야 합니다.
+
+4. Calibration과 MAD 정책 -> B가 development session 하면서 결정 
+
+- Calibration에 사용할 최소 프레임 수와 시간
+- 낮은 confidence 프레임 제외 기준
+- 사용자별 중심값은 median으로 확정할지
+- 공통 MAD를 feature별 상수로 둘지
+- V0에서는 Calibration 후 MAD를 고정할지
+- V2에서만 MAD를 업데이트할지
+- V2 MAD 업데이트 조건, window 크기, 업데이트 주기, min/max
+
+현재 합의 기준으로는 다음이 가장 명확합니다.
+
+```text
+V0: 사용자별 중심값 + 공통 MAD, Calibration 후 고정
+V2: 사용자별 중심값 + MAD, 안정적인 정상 구간에서 업데이트
+```
+
+5. 시간 판정과 알림 규칙 -> C가 결정
+
+- 자세 rule이 몇 초 지속되어야 alert인지
+- 일시적인 움직임을 언제까지 허용할지
+- 자세가 정상으로 돌아왔을 때 `RECOVERED`로 바뀌는 조건
+- 재알림 cooldown
+- `UNKNOWN` 상태가 alert 지속시간에 포함되는지
+
+6. 환경 변화 처리
+
+A가 계산한 환경 feature를 B와 C가 어떻게 사용할지 정해야 합니다.
+
+- 카메라 변화 시 자세 판정을 보류할지 
+- 프레임 밖 이탈이나 landmark 부족을 `UNKNOWN`으로 처리할지 
+    -> 판단 보류
+- 의자 이동은 alert 없이 계속 판단할지
+    -> 알림 X
+- 큰 카메라 변화는 `RECALIBRATION_REQUIRED`로 보낼지
+
+7. 로그와 평가 기준
+
+- 같은 JSONL 입력으로 V0와 V2를 replay할 것
+- 자세별 ground-truth label 형식
+- `scenarioStarted`, `driftOnset`, `scenarioEnded`의 의미
+- `driftOnset` 전환 구간을 평가에서 제외할지
+- 자세별 탐지율, 오탐 수, 탐지 지연시간을 어떻게 계산할지
+
+가장 먼저 의논해야 할 것은 `3번 자세별 rule 조건`, `4번 MAD 정책`, `5번 alert 지속시간`입니다. 이 세 가지가 정해져야 A는 feature를 마무리하고, B는 detector를 구현하며, C는 동일한 기준으로 replay 평가를 만들 수 있습니다.

@@ -4,8 +4,8 @@
 
 3일 안에 웹 MVP에서 `Baseline(V0)`과 `Proposed(V2)`를 완성하고 동일한 Test Session에서 비교한다.
 
-- V0: 상대 자세 feature + 공통 fixed threshold
-- V2: 상대 자세 feature + 온라인 MAD 개인화 + 카메라 변화 처리 + 시간 상태 판단
+- V0: 사용자별 calibration 중심값 + 공통 MAD + 자세별 규칙 판정
+- V2: V0 자세 규칙 + 온라인 MAD 개인화 + 카메라 변화 처리 + 시간 상태 판단
 - V2는 Development/적응 구간에서 사용자별 MAD를 만든 뒤 Test Session에서는 해당 MAD를 고정한다.
 - ground-truth label은 평가에만 사용하며 detector나 MAD 업데이트에는 전달하지 않는다.
 
@@ -14,8 +14,8 @@
 | 영역 | 구현됨 | 변경·추가 필요 |
 | --- | --- | --- |
 | A: 입력/feature | 웹캠, MediaPipe, skeleton, confidence·화면 이탈·jump 검사, 기본 정규화 feature, camera raw feature | 상대 자세 feature 확정, 자세/환경 feature 분리, 작은 카메라 변화 추정 |
-| B: profile/score | Calibration median/MAD, V0 fixed detector, 개인화 score, CameraProfile, IndexedDB 저장·복원 | Adaptive Profile 삭제, 공통 초기 MAD와 온라인 updater, V1 코드를 V2 score 내부로 정리, CameraAssessment |
-| C: 시간/평가 | state machine 인터페이스, JSONL recorder, marker, 자동 Development Session, replay, 공식 metric, threshold sweep | V2 state machine 완성, V0/V2 비교로 전환, MAD 변화 기록·분석, Test Session 결과표 |
+| B: profile/score | Calibration median, 공통 MAD, 자세별 rule detector, CameraProfile, IndexedDB 저장·복원 | 자세 rule과 결과 이유 연결, Adaptive Profile 삭제, V2 온라인 MAD updater, CameraAssessment |
+| C: 시간/평가 | state machine 인터페이스, JSONL recorder, marker, 자동 Development Session, replay, 공식 metric | V2 state machine 완성, 동일 rule 기반 V0/V2 비교, 자세별 결과·MAD 변화 기록·분석, Test Session 결과표 |
 | 공통 | Vite+TypeScript, Vitest, CI lint/typecheck/test/build, 실시간 UI | 새 타입 계약 통합, 최종 UI·README·발표 자료 |
 
 현재 `adaptiveCenters`, Calibration MAD, V0/V1 비교 코드는 새 설계로 교체하거나 V2 내부 로직으로 재사용한다. CameraProfile은 저장되지만 실제 `VALID / ADJUSTED / RECALIBRATION_REQUIRED` 판정은 아직 없다.
@@ -46,12 +46,14 @@
 - body scale·화면 중심·framing을 환경 feature로 분리
 - 의자 이동 시 상대 feature가 유지되는 단위 테스트 추가
 
-### B: 고정 중심 + 온라인 MAD
+### B: Calibration 중심 + 자세별 규칙
 
-- Calibration은 Original Reference median만 생성하도록 변경
-- feature별 공통 초기 MAD, min/max 설정 구조 구현
+- Calibration은 사용자별 Original Reference median을 생성
+- feature별 공통 초기 MAD와 min/max 설정 구조 구현
+- 자세별 rule을 정의하고 rule에 매칭된 feature와 알림 이유를 반환
 - 안정 구간 rolling window 기반 MAD updater 구현
 - 기존 개인화 detector를 Original center + 현재 MAD 기반 V2 score로 재구성
+- V0는 한 feature의 단순 초과가 아니라 등록된 자세 rule에 해당할 때만 alert 후보로 생성
 
 ### C: V2 시간 상태
 
@@ -73,30 +75,32 @@
 - 작은 translation, scale, roll 변화 추정
 - 큰 변화·landmark 불안정은 보정하지 않고 판정 보류
 
-### B: V0/V2 판정 통합
+### B: 자세별 V0/V2 판정 통합
 
-- V0를 상대 자세 feature의 공통 fixed threshold 기준으로 변경
+- V0를 사용자별 calibration 중심값과 공통 MAD를 사용하는 자세별 rule 기준으로 변경
+- 자세별 rule 결과에 postureType, matchedFeatures, reason을 포함
 - `VALID / ADJUSTED / RECALIBRATION_REQUIRED` 구현
 - V2 MAD updater가 안정 구간에서만 동작하도록 상태 머신과 연결
 - Original Profile, 현재 MAD, CameraProfile 저장·복원 및 로그 metadata 반영
 
 ### C: replay와 평가 전환
 
-- 기존 V0/V1 replay를 V0/V2 비교로 변경
-- JSONL에 V0/V2 상태, MAD 변화, camera state 기록
+- 기존 V0/V1 replay를 동일한 자세 rule을 사용하는 V0/V2 비교로 변경
+- JSONL에 V0/V2 상태, postureType, matchedFeatures, reason, MAD 변화, camera state 기록
 - 자동 session을 새 시나리오와 feature에 맞게 수정
 - 시간당 오탐, 지속 drift 탐지율, 탐지 지연, 자연 행동 오탐 출력
 
 ### 공동 Development Session
 
 - 정상 작업, 자연 행동, 지속 drift, 의자 이동, 작은·큰 카메라 변화 기록
-- V0 threshold와 V2의 초기 MAD·min/max·업데이트 규칙 조정
+- 자세별 V0 rule 조건과 V2의 초기 MAD·min/max·업데이트 규칙 조정
 - 정상 적응 구간에서 사용자별 MAD를 업데이트하고 최종 MAD 저장
 - 2일차 종료 후 파라미터, 업데이트 규칙, 저장된 MAD는 변경하지 않음
 
 ### 2일차 종료 조건
 
 - 실시간 카메라에서 V0/V2 동시 출력
+- V0/V2 모두 자세명과 위반 feature·알림 이유를 UI에 표시
 - V2가 정상 구간에서 MAD를 업데이트하고 drift 구간에서는 멈춤
 - 동일 JSONL에서 V0/V2 결과표 생성 가능
 
