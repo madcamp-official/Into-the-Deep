@@ -224,3 +224,4 @@
 - 9번 vs 12번: `forwardLeanProxy`의 방향과 threshold를 데이터로 검증 필요
 - 6번 vs 10번: 겹칠 때의 우선순위 규칙 별도 정의 필요 -> 벗어난 범위가 큰 순으로 판정
 - **0번(전역 게이트)**: τ_motion 값과, "보류" 상태가 need_discussion 5번(alert 지속시간)의 카운트에 어떻게 반영되는지(리셋할지, 그냥 스킵할지)는 need_discussion 2번/5번에서 별도로 정해야 함
+    -> need_discussion 5번(C) 결정: hold(누적도 리셋도 안 함), 단 hold가 4초를 넘게 이어지면 dwell timer를 리셋한다. `UNKNOWN`/`RECALIBRATION_REQUIRED`로 인한 hold도 동일 정책. τ_motion 값 자체는 need_discussion 2번(A) 확정 필요 — 아직 미해결.
