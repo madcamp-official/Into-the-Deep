@@ -10,6 +10,23 @@ export interface FrameFeature {
   pitchProxy?: number;
   yawProxy?: number;
   motionEnergy: number;
+  // feature_discussion additions (additive only — headXOffset/
+  // shoulderXOffset/shoulderYOffset/bodyScale above stay in place since
+  // B/C's detectors, profile-builder, and evaluation/* already key off
+  // them; renaming or removing them needs a team sync first per
+  // need_discussion #1). Optional here even though feature-normalizer
+  // always fills them in (nose/shoulders are required landmarks), so
+  // existing FrameFeature literals in B/C's fixtures/tests keep compiling
+  // without needing to know about every new field immediately.
+  shoulderAsymmetry?: number;
+  headXRatio?: number;
+  headYRatio?: number;
+  headShoulderDistanceRatio?: number;
+  bodyCompressionRatio?: number;
+  headRoll?: number;
+  relativeShoulderScale?: number;
+  handFaceDistance?: number;
+  handShoulderDistance?: number;
 }
 
 export interface CameraRawFeature {

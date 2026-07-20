@@ -494,6 +494,18 @@ async function main() {
         cameraProfile?.faceCenterX,
       ),
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
+      feature.headXRatio !== undefined ? `head X ratio: ${feature.headXRatio.toFixed(3)}` : "",
+      feature.headYRatio !== undefined ? `head Y ratio: ${feature.headYRatio.toFixed(3)}` : "",
+      feature.headShoulderDistanceRatio !== undefined
+        ? `head-shoulder distance ratio: ${feature.headShoulderDistanceRatio.toFixed(3)}`
+        : "",
+      feature.shoulderAsymmetry !== undefined
+        ? `shoulder asymmetry: ${feature.shoulderAsymmetry.toFixed(3)}`
+        : "",
+      feature.headRoll !== undefined ? `head roll: ${feature.headRoll.toFixed(1)}` : "",
+      feature.handFaceDistance !== undefined
+        ? `hand-face distance: ${feature.handFaceDistance.toFixed(3)}`
+        : "",
       feature.faceToShoulderRatio !== undefined
         ? `face/shoulder ratio: ${feature.faceToShoulderRatio.toFixed(3)}`
         : "",
