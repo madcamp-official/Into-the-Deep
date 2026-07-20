@@ -64,6 +64,15 @@ export async function loadProfiles(): Promise<StoredProfiles | null> {
   }
 }
 
+export function clearProfiles(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("Profile database is still open"));
+  });
+}
+
 function runProfileTransaction<T>(
   database: IDBDatabase,
   mode: IDBTransactionMode,

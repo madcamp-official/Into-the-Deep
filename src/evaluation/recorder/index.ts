@@ -6,6 +6,8 @@ import type {
   UserProfile,
 } from "../../core/types";
 
+export type SessionType = "POSTURE" | "CAMERA";
+
 export type SessionMarkerType =
   | "SCENARIO_STARTED"
   | "DRIFT_ONSET"
@@ -22,6 +24,7 @@ export interface SessionMetadata {
   cameraProfile: CameraProfile;
   madProfile?: MADProfile;
   profileCreatedAt: number;
+  sessionType?: SessionType;
 }
 
 // Mirrors the sample-data/sample-session.jsonl schema (plan.md section 19).
@@ -142,7 +145,16 @@ export function labelsFromEntries(
               marker.label === "RIGHT_LEAN" ||
               marker.label === "SIDE_SHIFT" ||
               marker.label === "HEAD_TURN" ||
-              marker.label === "CLOSE_TO_CAMERA"
+              marker.label === "CLOSE_TO_CAMERA" ||
+              marker.label === "HEAD_TILT" ||
+              marker.label === "CHIN_REST" ||
+              marker.label === "HEAD_BACK" ||
+              marker.label === "SHOULDER_ASYMMETRY" ||
+              marker.label === "ROUNDED_SHOULDERS" ||
+              marker.label === "BACKWARD_LEAN" ||
+              marker.label === "CHIN_TUCK" ||
+              marker.label === "TORSO_TWIST" ||
+              marker.label === "SHOULDERS_ONLY_TWIST"
             ? "SETTLING"
             : marker.label,
         });
