@@ -15,7 +15,7 @@ function point(x: number, y: number, visibility: number): NormalizedLandmark {
 function createLandmarks(
   overrides: Partial<Record<keyof typeof LANDMARK_INDEX, NormalizedLandmark>> = {},
 ): NormalizedLandmark[] {
-  const landmarks: NormalizedLandmark[] = new Array(13).fill(point(0.5, 0.5, 1));
+  const landmarks: NormalizedLandmark[] = new Array(25).fill(point(0.5, 0.5, 1));
   landmarks[LANDMARK_INDEX.nose] = point(0.5, 0.4, 1);
   landmarks[LANDMARK_INDEX.leftEye] = point(0.48, 0.38, 1);
   landmarks[LANDMARK_INDEX.rightEye] = point(0.52, 0.38, 1);
@@ -23,6 +23,8 @@ function createLandmarks(
   landmarks[LANDMARK_INDEX.rightEar] = point(0.55, 0.4, 1);
   landmarks[LANDMARK_INDEX.leftShoulder] = point(0.4, 0.6, 1);
   landmarks[LANDMARK_INDEX.rightShoulder] = point(0.6, 0.6, 1);
+  landmarks[LANDMARK_INDEX.leftWrist] = point(0.35, 0.9, 1);
+  landmarks[LANDMARK_INDEX.rightWrist] = point(0.65, 0.9, 1);
 
   for (const [key, value] of Object.entries(overrides)) {
     landmarks[LANDMARK_INDEX[key as keyof typeof LANDMARK_INDEX]] = value;
@@ -38,6 +40,61 @@ describe("assessLandmarkQuality", () => {
     expect(quality.reliable).toBe(true);
     expect(quality.eyesReliable).toBe(true);
     expect(quality.earsReliable).toBe(true);
+    expect(quality.wristsReliable).toBe(true);
+  });
+
+  it("reports wristsReliable true when only one wrist is visible (e.g. the other hand is off-desk)", () => {
+    const landmarks = createLandmarks({
+      leftWrist: point(0.35, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
+    });
+
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.wristsReliable).toBe(true);
+    expect(quality.reliable).toBe(true);
+  });
+
+  it("reports wristsReliable false when neither wrist is visible", () => {
+    const landmarks = createLandmarks({
+      leftWrist: point(0.35, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
+      rightWrist: point(0.65, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
+    });
+
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.wristsReliable).toBe(false);
+    // hand landmarks aren't part of the core UNKNOWN gate — losing both
+    // wrists just means hand-relative features go undefined.
+    expect(quality.reliable).toBe(true);
+  });
+
+  it("reports landmarkCoverage 1 and occlusionRate 0 when every tracked landmark is visible", () => {
+    const quality = assessLandmarkQuality(createLandmarks(), 0);
+
+    expect(quality.landmarkCoverage).toBe(1);
+    expect(quality.occlusionRate).toBe(0);
+  });
+
+  it("reports landmarkCoverage 0 and occlusionRate 0 when no one is in frame", () => {
+    const quality = assessLandmarkQuality(undefined, 0);
+
+    expect(quality.landmarkCoverage).toBe(0);
+    expect(quality.occlusionRate).toBe(0);
+  });
+
+  it("lowers landmarkCoverage and raises occlusionRate for landmarks MediaPipe reports but doesn't trust", () => {
+    // Both ears occluded (present in the array, but below confidence) —
+    // 2 of the 9 tracked landmarks. MediaPipe still fills in the array
+    // entries, so this is occlusion, not absence.
+    const landmarks = createLandmarks({
+      leftEar: point(0.45, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+      rightEar: point(0.55, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+    });
+
+    const quality = assessLandmarkQuality(landmarks, 0);
+
+    expect(quality.landmarkCoverage).toBeCloseTo(7 / 9, 10);
+    expect(quality.occlusionRate).toBeCloseTo(2 / 9, 10);
   });
 
   it("reports earsReliable false when one ear's visibility is below threshold, without affecting the overall reliable/eyesReliable flags", () => {

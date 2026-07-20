@@ -20,7 +20,11 @@ export async function createPoseLandmarker(): Promise<PoseLandmarker> {
       delegate: "GPU",
     },
     runningMode: "VIDEO",
-    numPoses: 1,
+    // 2, not 1: this MVP only ever tracks/scores one primary person
+    // (result.landmarks[0]), but detecting a 2nd pose is what lets
+    // personCount (feature_discussion's "다른 사람이 화면에 들어옴") notice
+    // someone else stepping into frame at all.
+    numPoses: 2,
   });
 }
 
@@ -30,6 +34,10 @@ export function detectPoseForVideoFrame(
   timestampMs: number,
 ): PoseLandmarkerResult {
   return landmarker.detectForVideo(video, timestampMs);
+}
+
+export function countPersons(result: PoseLandmarkerResult): number {
+  return result.landmarks.length;
 }
 
 // MediaPipe Pose landmark indices used across the pipeline (nose, eyes,
@@ -42,6 +50,13 @@ export const LANDMARK_INDEX = {
   rightEar: 8,
   leftShoulder: 11,
   rightShoulder: 12,
+  // Elbows are only used for skeleton-overlay drawing continuity
+  // (shoulder->elbow->wrist), not for any feature computation — see
+  // need_discussion's "팔꿈치 없애기" decision on the feature side.
+  leftElbow: 13,
+  rightElbow: 14,
+  leftWrist: 15,
+  rightWrist: 16,
   leftHip: 23,
   rightHip: 24,
 } as const;

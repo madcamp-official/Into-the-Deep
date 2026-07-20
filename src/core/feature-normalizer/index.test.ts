@@ -11,7 +11,7 @@ function point(x: number, y: number, visibility: number): NormalizedLandmark {
 function createLandmarks(
   overrides: Partial<Record<keyof typeof LANDMARK_INDEX, NormalizedLandmark>> = {},
 ): NormalizedLandmark[] {
-  const landmarks: NormalizedLandmark[] = new Array(13).fill(point(0.5, 0.5, 1));
+  const landmarks: NormalizedLandmark[] = new Array(25).fill(point(0.5, 0.5, 1));
   landmarks[LANDMARK_INDEX.nose] = point(0.5, 0.4, 1);
   landmarks[LANDMARK_INDEX.leftEye] = point(0.48, 0.38, 1);
   landmarks[LANDMARK_INDEX.rightEye] = point(0.52, 0.38, 1);
@@ -19,6 +19,8 @@ function createLandmarks(
   landmarks[LANDMARK_INDEX.rightEar] = point(0.55, 0.4, 1);
   landmarks[LANDMARK_INDEX.leftShoulder] = point(0.4, 0.6, 1);
   landmarks[LANDMARK_INDEX.rightShoulder] = point(0.6, 0.6, 1);
+  landmarks[LANDMARK_INDEX.leftWrist] = point(0.35, 0.9, 1);
+  landmarks[LANDMARK_INDEX.rightWrist] = point(0.65, 0.9, 1);
 
   for (const [key, value] of Object.entries(overrides)) {
     landmarks[LANDMARK_INDEX[key as keyof typeof LANDMARK_INDEX]] = value;
@@ -62,16 +64,88 @@ describe("toFrameFeature", () => {
     expect(feature?.pitchProxy).toBeDefined();
   });
 
-  it("folds eye/ear visibility into confidence, not just nose/shoulders", () => {
+  it("keeps confidence at the required-landmark (nose/shoulders) minimum, unaffected by an occluded eye/ear/wrist", () => {
+    // need_discussion #2: only nose/shoulders gate frame confidence — eyes/
+    // ears/wrists are optional, so losing one should only undefine the
+    // specific features that depend on it, not drag confidence down.
     const landmarks = createLandmarks({
       leftEar: point(0.45, 0.4, 0.2),
     });
 
     const feature = toFrameFeature(landmarks, 0);
 
-    // nose/shoulders are all visibility 1 here, so pre-fix confidence would
-    // have stayed 1 regardless of the occluded ear.
-    expect(feature?.confidence).toBe(0.2);
+    expect(feature?.confidence).toBe(1);
+    expect(feature?.yawProxy).toBeUndefined();
+  });
+
+  it("computes shoulderAsymmetry/headXRatio/headYRatio/headShoulderDistanceRatio/bodyCompressionRatio near zero for a level, centered pose", () => {
+    const feature = toFrameFeature(createLandmarks(), 0);
+
+    expect(feature?.shoulderAsymmetry).toBeCloseTo(0, 2);
+    expect(feature?.headXRatio).toBeCloseTo(0, 1);
+    expect(feature?.headYRatio).toBeLessThan(0); // head sits above the shoulder line
+    expect(feature?.headShoulderDistanceRatio).toBeGreaterThan(0);
+    expect(feature?.bodyCompressionRatio).toBeCloseTo(
+      Math.abs(feature?.headYRatio ?? NaN),
+      10,
+    );
+  });
+
+  it("falls back to the ear midpoint for head-center ratios when eyes are unreliable", () => {
+    const landmarks = createLandmarks({
+      leftEye: point(0.48, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+      rightEye: point(0.52, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    // Still defined (ear fallback), not undefined and not silently using nose.
+    expect(feature?.headXRatio).toBeDefined();
+    expect(feature?.headRoll).toBeDefined();
+  });
+
+  it("still computes head-center ratios (via nose fallback) when both eyes and ears are unreliable", () => {
+    const landmarks = createLandmarks({
+      leftEye: point(0.48, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+      rightEye: point(0.52, 0.38, RELIABILITY_THRESHOLDS.eyeMinConfidence - 0.1),
+      leftEar: point(0.45, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+      rightEar: point(0.55, 0.4, RELIABILITY_THRESHOLDS.earMinConfidence - 0.1),
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    expect(feature?.headXRatio).toBeDefined();
+    expect(feature?.headYRatio).toBeDefined();
+    expect(feature?.headShoulderDistanceRatio).toBeDefined();
+    // No eye or ear line to measure roll/relative-scale from.
+    expect(feature?.headRoll).toBeUndefined();
+    expect(feature?.relativeShoulderScale).toBeUndefined();
+  });
+
+  it("computes handFaceDistance/handShoulderDistance using whichever wrist is closer to the head", () => {
+    const landmarks = createLandmarks({
+      leftWrist: point(0.5, 0.42, 1), // right next to the face/chin
+      rightWrist: point(0.65, 0.9, 1), // resting far away, e.g. on a desk
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    expect(feature?.handFaceDistance).toBeDefined();
+    expect(feature?.handShoulderDistance).toBeDefined();
+    // The near hand should win, so distance-to-face should be small.
+    expect(feature?.handFaceDistance ?? Infinity).toBeLessThan(1);
+  });
+
+  it("omits handFaceDistance/handShoulderDistance when neither wrist is reliable", () => {
+    const landmarks = createLandmarks({
+      leftWrist: point(0.35, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
+      rightWrist: point(0.65, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
+    });
+
+    const feature = toFrameFeature(landmarks, 0);
+
+    expect(feature?.handFaceDistance).toBeUndefined();
+    expect(feature?.handShoulderDistance).toBeUndefined();
   });
 });
 
@@ -164,5 +238,71 @@ describe("toFrameFeature jump rejection", () => {
     });
 
     expect(toFrameFeature(extreme, 0)).not.toBeNull();
+  });
+});
+
+// division_plan_3days.md Day1 A task: prove the ratio-based design actually
+// holds up — sliding the chair closer/farther/sideways (uniform scale +
+// translation applied to every landmark, same relative posture) should
+// leave posture features alone and only move the environment/raw camera
+// signals (plan_compact.md's "환경 feature만 변화 -> alert 없음").
+function transformLandmarks(
+  landmarks: NormalizedLandmark[],
+  scale: number,
+  translateX: number,
+  translateY: number,
+): NormalizedLandmark[] {
+  return landmarks.map((point) => ({
+    x: point.x * scale + translateX,
+    y: point.y * scale + translateY,
+    z: point.z,
+    visibility: point.visibility,
+  }));
+}
+
+describe("toFrameFeature chair-movement invariance", () => {
+  it("keeps relative posture features unchanged when the whole body moves closer and sideways", () => {
+    const baseline = createLandmarks();
+    // 30% closer to the camera (scale 1.3) and shifted sideways/down —
+    // same chair-seated posture, different position/distance in frame.
+    const moved = transformLandmarks(baseline, 1.3, 0.12, 0.05);
+
+    const baseFeature = toFrameFeature(baseline, 0);
+    const movedFeature = toFrameFeature(moved, 0);
+    expect(baseFeature).not.toBeNull();
+    expect(movedFeature).not.toBeNull();
+    if (!baseFeature || !movedFeature) return;
+
+    for (const key of [
+      "shoulderTilt",
+      "headXRatio",
+      "headYRatio",
+      "headShoulderDistanceRatio",
+      "shoulderAsymmetry",
+      "faceToShoulderRatio",
+      "pitchProxy",
+      "yawProxy",
+    ] as const) {
+      expect(movedFeature[key]).toBeCloseTo(baseFeature[key] ?? NaN, 6);
+    }
+
+    // The environment/raw signal that a chair move *should* affect: body
+    // scale grows by exactly the simulated scale factor.
+    expect(movedFeature.bodyScale).toBeCloseTo(baseFeature.bodyScale * 1.3, 6);
+  });
+
+  it("keeps relative posture features unchanged under scale alone (moving straight back)", () => {
+    const baseline = createLandmarks();
+    const movedBack = transformLandmarks(baseline, 0.7, 0, 0);
+
+    const baseFeature = toFrameFeature(baseline, 0);
+    const movedFeature = toFrameFeature(movedBack, 0);
+    expect(baseFeature).not.toBeNull();
+    expect(movedFeature).not.toBeNull();
+    if (!baseFeature || !movedFeature) return;
+
+    expect(movedFeature.headXRatio).toBeCloseTo(baseFeature.headXRatio ?? NaN, 6);
+    expect(movedFeature.headYRatio).toBeCloseTo(baseFeature.headYRatio ?? NaN, 6);
+    expect(movedFeature.bodyScale).toBeCloseTo(baseFeature.bodyScale * 0.7, 6);
   });
 });

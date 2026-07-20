@@ -1,9 +1,14 @@
 import { startWebcam } from "../camera-adapter/webcam";
-import { createPoseLandmarker, detectPoseForVideoFrame } from "../camera-adapter/pose-landmarker";
+import {
+  countPersons,
+  createPoseLandmarker,
+  detectPoseForVideoFrame,
+} from "../camera-adapter/pose-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
 import {
   buildCameraProfile,
+  computeCameraDelta,
   toCameraRawFeature,
 } from "../../core/camera-profile";
 import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
@@ -54,6 +59,10 @@ async function main() {
   canvas.width = 1280;
   canvas.height = 720;
   canvas.className = "camera-canvas";
+
+  const alertBanner = document.createElement("div");
+  alertBanner.className = "alert-banner alert-banner--idle";
+  alertBanner.textContent = "캘리브레이션 후 측정을 시작하세요";
 
   const layout = document.createElement("main");
   layout.className = "app-layout";
@@ -120,7 +129,7 @@ async function main() {
 
   sidePanel.append(controls, sessionInstruction, status);
   layout.append(canvas, sidePanel);
-  app.append(video, layout);
+  app.append(video, layout, alertBanner);
   addLayoutStyles();
 
   const ctx = canvas.getContext("2d");
@@ -444,12 +453,18 @@ async function main() {
     URL.revokeObjectURL(url);
   };
 
+  function setAlertBanner(kind: "idle" | "unknown" | "good" | "bad", message: string): void {
+    alertBanner.className = `alert-banner alert-banner--${kind}`;
+    alertBanner.textContent = message;
+  }
+
   const loop = () => {
     const timestamp = performance.now();
     processAutomatedSession(timestamp);
     updateSessionInstruction(timestamp);
     const result = detectPoseForVideoFrame(landmarker, video, timestamp);
     const landmarks = result.landmarks[0];
+    const personCount = countPersons(result);
 
     drawVideoFrame(ctx, video, canvas.width, canvas.height);
 
@@ -458,6 +473,7 @@ async function main() {
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
+      setAlertBanner("unknown", describeUnreliableState(quality));
       requestAnimationFrame(loop);
       return;
     }
@@ -468,11 +484,16 @@ async function main() {
     previousFeature = feature;
 
     if (!feature) {
+      setAlertBanner("unknown", "UNKNOWN");
       requestAnimationFrame(loop);
       return;
     }
 
     const cameraRawFeature = toCameraRawFeature(landmarks, timestamp);
+    const cameraDelta =
+      cameraRawFeature && cameraProfile
+        ? computeCameraDelta(cameraRawFeature, cameraProfile)
+        : null;
 
     if (calibrationFrames && calibrationCameraFrames) {
       calibrationFrames.push(feature);
@@ -503,21 +524,56 @@ async function main() {
       }
     }
 
+    if (!detector) {
+      setAlertBanner("idle", "캘리브레이션 후 측정을 시작하세요");
+    } else {
+      const v0Alert = event?.alert ?? false;
+      const v1Alert = v1Result?.event.alert ?? false;
+      if (v0Alert || v1Alert) {
+        const sources = [v0Alert ? "V0" : null, v1Alert ? "V2" : null]
+          .filter((source): source is string => source !== null)
+          .join(", ");
+        const reason =
+          v1Result && v1Result.observation.dominantFeatures.length > 0
+            ? v1Result.observation.dominantFeatures.join(", ")
+            : (event?.reason.join(", ") ?? "");
+        setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
+      } else {
+        setAlertBanner("good", "정상 자세입니다");
+      }
+    }
+
     status.textContent = [
       cameraProfile
         ? "camera profile: saved (assessment pending)"
         : "camera profile: not calibrated",
-      getRatioDeltaLine(
-        "camera shoulder-width delta",
-        cameraRawFeature?.shoulderWidth,
-        cameraProfile?.shoulderWidth,
-      ),
-      getDeltaLine(
-        "camera face-center-x delta",
-        cameraRawFeature?.faceCenterX,
-        cameraProfile?.faceCenterX,
-      ),
+      cameraDelta
+        ? `camera scale delta: ${(cameraDelta.globalScaleDelta * 100).toFixed(1)}%`
+        : "",
+      cameraDelta ? `camera translation X: ${cameraDelta.globalTranslationX.toFixed(3)}` : "",
+      cameraDelta ? `camera translation Y: ${cameraDelta.globalTranslationY.toFixed(3)}` : "",
+      cameraDelta ? `corrected yaw: ${cameraDelta.correctedYaw.toFixed(3)}` : "",
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
+      `landmark coverage: ${(quality.landmarkCoverage * 100).toFixed(0)}%`,
+      quality.occlusionRate > 0
+        ? `occlusion rate: ${(quality.occlusionRate * 100).toFixed(0)}%`
+        : "",
+      personCount > 1 ? `⚠ person count: ${personCount}` : "",
+      feature.headXRatio !== undefined ? `head X ratio: ${feature.headXRatio.toFixed(3)}` : "",
+      feature.headYRatio !== undefined ? `head Y ratio: ${feature.headYRatio.toFixed(3)}` : "",
+      feature.headShoulderDistanceRatio !== undefined
+        ? `head-shoulder distance ratio: ${feature.headShoulderDistanceRatio.toFixed(3)}`
+        : "",
+      feature.shoulderAsymmetry !== undefined
+        ? `shoulder asymmetry: ${feature.shoulderAsymmetry.toFixed(3)}`
+        : "",
+      feature.headRoll !== undefined ? `head roll: ${feature.headRoll.toFixed(1)}` : "",
+      feature.shoulderDepthAsymmetry !== undefined
+        ? `shoulder depth asymmetry: ${feature.shoulderDepthAsymmetry.toFixed(3)}`
+        : "",
+      feature.handFaceDistance !== undefined
+        ? `hand-face distance: ${feature.handFaceDistance.toFixed(3)}`
+        : "",
       feature.faceToShoulderRatio !== undefined
         ? `face/shoulder ratio: ${feature.faceToShoulderRatio.toFixed(3)}`
         : "",
@@ -590,6 +646,7 @@ function addLayoutStyles(): void {
       max-width: 1440px;
       margin: 0 auto;
       padding: 24px;
+      padding-bottom: 96px;
     }
 
     .app-layout {
@@ -668,6 +725,40 @@ function addLayoutStyles(): void {
         width: 100%;
         min-width: 0;
       }
+    }
+
+    .alert-banner {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      box-sizing: border-box;
+      width: 100%;
+      padding: 18px 24px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #ffffff;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+      transition: background-color 150ms ease;
+    }
+
+    .alert-banner--idle {
+      background: #6b7280;
+    }
+
+    .alert-banner--unknown {
+      background: #b45309;
+    }
+
+    .alert-banner--good {
+      background: #16a34a;
+    }
+
+    .alert-banner--bad {
+      background: #dc2626;
     }
   `;
   document.head.append(style);
