@@ -86,12 +86,14 @@ export interface FrameFeature {
   yawProxy?: number;
   motionEnergy: number;
 
-  // New relative posture features. They remain optional until the input
-  // pipeline supplies the corresponding landmarks reliably. Additive only —
-  // headXOffset/shoulderXOffset/shoulderYOffset/bodyScale above stay in
-  // place since B/C's detectors, profile-builder, and evaluation/* already
-  // key off them; renaming or removing them needs a team sync first per
-  // need_discussion #1.
+  // feature_discussion additions (additive only — headXOffset/
+  // shoulderXOffset/shoulderYOffset/bodyScale above stay in place since
+  // B/C's detectors, profile-builder, and evaluation/* already key off
+  // them; renaming or removing them needs a team sync first per
+  // need_discussion #1). Optional here even though feature-normalizer
+  // always fills most of these in (nose/shoulders are required landmarks),
+  // so existing FrameFeature literals in B/C's fixtures/tests keep
+  // compiling without needing to know about every new field immediately.
   shoulderWidth?: number;
   shoulderCenterX?: number;
   shoulderCenterY?: number;

@@ -20,21 +20,6 @@ export const RELIABILITY_THRESHOLDS = {
   frameMargin: 0.02,
 };
 
-// Landmarks tracked for landmarkCoverage/occlusionRate (feature_discussion):
-// the full set A's features draw on, beyond just the required nose/
-// shoulders.
-const TRACKED_LANDMARKS = [
-  LANDMARK_INDEX.nose,
-  LANDMARK_INDEX.leftEye,
-  LANDMARK_INDEX.rightEye,
-  LANDMARK_INDEX.leftEar,
-  LANDMARK_INDEX.rightEar,
-  LANDMARK_INDEX.leftShoulder,
-  LANDMARK_INDEX.rightShoulder,
-  LANDMARK_INDEX.leftWrist,
-  LANDMARK_INDEX.rightWrist,
-] as const;
-
 // Day2 draft of the Reliability Filter (plan.md section 8). Frames that
 // fail this check should be treated as UNKNOWN by downstream detectors,
 // not as BAD posture. Sudden landmark jumps are a Day3 concern once we
@@ -92,25 +77,6 @@ export function assessLandmarkQuality(
   const wristsReliable = isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
     isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
 
-  // landmarkCoverage: how much of the tracked landmark set MediaPipe both
-  // reports *and* trusts (visibility above threshold) this frame.
-  // occlusionRate: of the landmarks MediaPipe reports at all, how many are
-  // present but not trustworthy (hidden by hair/hand/turned away) — MediaPipe
-  // always fills every index once a person is detected, so "present" alone
-  // doesn't mean visible.
-  const trackedPoints = TRACKED_LANDMARKS.map((index) => landmarks?.[index]);
-  const presentPoints = trackedPoints.filter(
-    (point): point is NormalizedLandmark => point !== undefined,
-  );
-  const visiblePoints = presentPoints.filter(
-    (point) => point.visibility >= RELIABILITY_THRESHOLDS.minConfidence,
-  );
-  const landmarkCoverage = visiblePoints.length / TRACKED_LANDMARKS.length;
-  const occlusionRate =
-    presentPoints.length > 0
-      ? (presentPoints.length - visiblePoints.length) / presentPoints.length
-      : 0;
-
   const landmarkChecks: Array<{
     name: LandmarkName;
     point: NormalizedLandmark | undefined;
@@ -131,6 +97,16 @@ export function assessLandmarkQuality(
     { name: "rightEye", point: rightEye, minConfidence: RELIABILITY_THRESHOLDS.eyeMinConfidence },
     { name: "leftEar", point: leftEar, minConfidence: RELIABILITY_THRESHOLDS.earMinConfidence },
     { name: "rightEar", point: rightEar, minConfidence: RELIABILITY_THRESHOLDS.earMinConfidence },
+    {
+      name: "leftWrist",
+      point: leftWrist,
+      minConfidence: RELIABILITY_THRESHOLDS.wristMinConfidence,
+    },
+    {
+      name: "rightWrist",
+      point: rightWrist,
+      minConfidence: RELIABILITY_THRESHOLDS.wristMinConfidence,
+    },
   ];
   const reliableLandmarks = landmarkChecks
     .filter(({ point, minConfidence }) =>
@@ -142,6 +118,14 @@ export function assessLandmarkQuality(
       point === undefined || !isInFrame(point) || point.visibility < minConfidence,
     )
     .map(({ name }) => name);
+
+  // landmarkCoverage: how much of the tracked landmark set (landmarkChecks
+  // above) MediaPipe both reports *and* trusts this frame. occlusionRate:
+  // of that same set, how many are present but not trustworthy (hidden by
+  // hair/hand/turned away) — MediaPipe always fills every index once a
+  // person is detected, so "present" alone doesn't mean visible.
+  const landmarkCoverage = reliableLandmarks.length / landmarkChecks.length;
+  const occlusionRate = unreliableLandmarks.length / landmarkChecks.length;
 
   return {
     timestamp,
