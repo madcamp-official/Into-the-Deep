@@ -506,14 +506,22 @@ async function main() {
       const v0Alert = event?.alert ?? false;
       const v1Alert = v1Result?.event.alert ?? false;
       if (v0Alert || v1Alert) {
-        const sources = [v0Alert ? "V0" : null, v1Alert ? "V2" : null]
-          .filter((source): source is string => source !== null)
-          .join(", ");
-        const reason =
-          v1Result && v1Result.observation.dominantFeatures.length > 0
-            ? v1Result.observation.dominantFeatures.join(", ")
-            : (event?.reason.join(", ") ?? "");
-        setAlertBanner("bad", `자세 이탈 감지 (${sources})${reason ? ` — ${reason}` : ""}`);
+        // Show each detector's own trigger reason, not just whichever one
+        // happens to be checked first — V0 and V2 can disagree (that's the
+        // whole point of comparing them), so collapsing to a single reason
+        // string would misrepresent whichever detector didn't "win".
+        const parts: string[] = [];
+        if (v0Alert && event) {
+          const v0Reasons = event.reason.filter(
+            (entry) => !entry.endsWith("_skipped_low_confidence"),
+          );
+          parts.push(`V0: ${v0Reasons.length > 0 ? v0Reasons.join(", ") : "?"}`);
+        }
+        if (v1Alert && v1Result) {
+          const v1Reasons = v1Result.observation.dominantFeatures;
+          parts.push(`V2: ${v1Reasons.length > 0 ? v1Reasons.join(", ") : "?"}`);
+        }
+        setAlertBanner("bad", `자세 이탈 감지 — ${parts.join(" / ")}`);
       } else {
         setAlertBanner("good", "정상 자세입니다");
       }
