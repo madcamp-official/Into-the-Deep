@@ -3,7 +3,6 @@ import type { LandmarkName, PostureRule } from "../types";
 const CORE: LandmarkName[] = ["nose", "leftShoulder", "rightShoulder"];
 const EYES: LandmarkName[] = [...CORE, "leftEye", "rightEye"];
 const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
-const HANDS: LandmarkName[] = [...CORE, "leftWrist", "rightWrist"];
 
 // Thresholds are normalized deviations (feature delta / feature MAD). They
 // are intentionally conservative starting values for development-session tuning.
@@ -188,14 +187,36 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   // it from FORWARD_HEAD/FORWARD_LEAN/CHIN_REST/SHOULDERS_ONLY_TWIST.
   {
     postureType: "CHIN_REST",
-    requiredLandmarks: HANDS,
+    // CORE, not HANDS (both wrists): assessRuleReliability requires every
+    // listed landmark individually, but handFaceDistance/handShoulderDistance
+    // only need *one* wrist (landmark-reliability's wristsReliable is
+    // OR-based — resting a chin on one hand naturally leaves the other arm
+    // off-frame/unreliable). Requiring both wrists here made the rule defer
+    // whenever the *unused* wrist's confidence dipped, confirmed live via
+    // the capture button (strong handFaceDistance/handShoulderDistance
+    // scores present, but posture flickered between CHIN_REST and
+    // HEAD_DOWN/no-match frame to frame). scoreCondition already returns
+    // undefined (failing the required check) if handFaceDistance itself
+    // couldn't be computed, so no separate landmark gate is needed here.
+    requiredLandmarks: CORE,
     required: [{ feature: "handFaceDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" }],
+    // handShoulderDistance added after live capture-button testing: once
+    // profile-builder started giving handFaceDistance a real CALIBRATION
+    // center (see profile-builder fix), a genuine chin-rest scored
+    // handFaceDistance -20.91 and handShoulderDistance -12.73 — but the
+    // *old* anyOf (headRoll/pitchProxy) sat just under threshold (0.69x,
+    // 0.89x) and faceShapeDeformation is never computed at all (always
+    // undefined), so the rule still didn't fire. handShoulderDistance is a
+    // much stronger, already-reliable signal for the same "hand near
+    // face/shoulder" posture, so it's added here rather than loosening the
+    // weaker head-orientation conditions.
     anyOf: [
+      { feature: "handShoulderDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" },
       { feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "pitchProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "faceShapeDeformation", operator: "GT", threshold: 2, reference: "CALIBRATION" },
     ],
-    supporting: ["handShoulderDistance"],
+    supporting: [],
     reason: "hand is close to the face and the head shape indicates support",
   },
   {
