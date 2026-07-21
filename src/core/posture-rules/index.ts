@@ -192,7 +192,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "CHIN_REST",
     requiredLandmarks: HANDS,
-    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -2, reference: "CALIBRATION" }],
+    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" }],
     anyOf: [
       { feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "pitchProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
