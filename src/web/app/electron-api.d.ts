@@ -11,6 +11,7 @@ export interface ElectronAPI {
   sendPostureAlert(payload: PostureAlertPayload): void;
   onPostureAlert(callback: (payload: PostureAlertPayload) => void): void;
   setIgnoreMouseEvents(ignore: boolean): void;
+  notifyNoProfile(): void;
 }
 
 declare global {

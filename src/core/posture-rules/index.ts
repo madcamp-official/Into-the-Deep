@@ -161,7 +161,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // sat close enough to those two that the ambiguity gate returned
     // UNKNOWN instead of picking a winner. priority 1.3 gives a genuine
     // double-condition match enough of an edge to win outright.
-    priority: 1.3,
+    //
+    // Raised 1.3 -> 2.1: TORSO_TWIST's own priority was later bumped to 2.0
+    // (to beat FORWARD_HEAD, see TORSO_TWIST below), which silently
+    // re-broke this fix — confirmed live, a pure backward lean (no actual
+    // twist) flipped to TORSO_TWIST whenever correctedYaw's noise crossed
+    // its ABS_GT 2 threshold (observed score 2.46 while only leaning back).
+    // Safe to win outright rather than risk on evidence score: a genuine
+    // torso twist inflates faceToShoulderRatio to strongly positive values
+    // (TORSO_TWIST's own comment below, ~5-7), which fails this rule's own
+    // faceToShoulderRatio LT -1 requirement, so this can't steal real
+    // twists — it only wins the "pure lean, no twist" case it's meant to.
+    priority: 2.1,
   },
   {
     postureType: "HEAD_TURN",
@@ -302,17 +313,13 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["headYRatio", "headShoulderDistanceRatio", "faceToShoulderRatio", "forwardLeanProxy"],
     reason: "head is tilted backward without a matching torso lean",
   },
-  {
-    postureType: "CHIN_TUCK",
-    requiredLandmarks: EYES,
-    required: [
-      { feature: "faceToShoulderRatioDelta", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-    ],
-    anyOf: [{ feature: "pitchProxy", operator: "LT", threshold: -1.5, reference: "CALIBRATION" }],
-    supporting: ["headXRatio"],
-    reason: "chin is pulled backward relative to the calibrated head position",
-  },
+  // CHIN_TUCK intentionally removed: its required faceToShoulderRatioDelta
+  // condition is dead code — that feature is never actually computed by
+  // feature-normalizer (only mentioned in a comment describing what
+  // forwardLeanProxy conceptually becomes after generic calibration-delta
+  // normalization, not a real FrameFeature field), so the condition always
+  // scored undefined and this rule could never match, same as the
+  // torsoRotationProxy situation that kills SHOULDERS_ONLY_TWIST.
   {
     postureType: "TORSO_TWIST",
     requiredLandmarks: CORE,
