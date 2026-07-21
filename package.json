@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "electron:dev": "node electron/dev-launcher.js",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.22-rc.20250304"
@@ -43,7 +44,20 @@
       "package.json"
     ],
     "win": {
-      "target": "zip"
+      "target": ["nsis", "zip"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.healthcare-fitness",
+      "extendInfo": {
+        "NSCameraUsageDescription": "카메라로 자세를 인식해서 알려드리기 위해 필요합니다."
+      }
     }
   }
 }

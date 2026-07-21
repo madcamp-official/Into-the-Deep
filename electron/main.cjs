@@ -104,6 +104,11 @@ function createOverlayWindow() {
   });
 
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
+  // macOS-specific: without this, a full-screen app (its own Space) or
+  // another virtual desktop would cover the overlay despite alwaysOnTop —
+  // Windows doesn't have this Spaces/virtual-desktop distinction, so
+  // setVisibleOnAllWorkspaces is a no-op there.
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   loadPage(overlayWindow, "electron-overlay.html");
   overlayWindow.on("closed", () => {
