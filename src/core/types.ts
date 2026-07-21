@@ -295,5 +295,6 @@ export interface ScenarioLabel {
     | "BACKWARD_LEAN"
     | "CHIN_TUCK"
     | "TORSO_TWIST"
-    | "SHOULDERS_ONLY_TWIST";
+    | "SHOULDERS_ONLY_TWIST"
+    | "ARMREST_LEAN";
 }

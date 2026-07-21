@@ -268,6 +268,14 @@ export function toFrameFeature(
   const headXOffset = smooth(rawHeadXOffset, previous?.headXOffset);
   const shoulderXOffset = smooth(rawShoulderXOffset, previous?.shoulderXOffset);
   const shoulderYOffset = smooth(rawShoulderYOffset, previous?.shoulderYOffset);
+  // Raw (not shoulderWidth-divided) screen position — deliberately NOT
+  // translation-invariant, unlike shoulderXOffset/YOffset above. Needed for
+  // ARMREST_LEAN: telling a real armrest lean (diagonal screen movement,
+  // bodyScale unchanged) apart from the chair being pushed back diagonally
+  // (same diagonal screen movement, but bodyScale shrinks) requires the raw
+  // direction of on-screen movement, not a scale-normalized ratio.
+  const shoulderCenterXFeature = smooth(shoulderCenterX, previous?.shoulderCenterX);
+  const shoulderCenterYFeature = smooth(shoulderCenterY, previous?.shoulderCenterY);
   const bodyScale = smooth(rawBodyScale, previous?.bodyScale);
   const faceToShoulderRatio =
     rawFaceToShoulderRatio !== undefined
@@ -327,6 +335,8 @@ export function toFrameFeature(
     headXOffset,
     shoulderXOffset,
     shoulderYOffset,
+    shoulderCenterX: shoulderCenterXFeature,
+    shoulderCenterY: shoulderCenterYFeature,
     bodyScale,
     ...(faceToShoulderRatio !== undefined ? { faceToShoulderRatio } : {}),
     ...(pitchProxy !== undefined ? { pitchProxy } : {}),

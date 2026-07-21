@@ -296,4 +296,36 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["shoulderWidthRatio", "shoulderTilt"],
     reason: "shoulders rotate while the head remains forward",
   },
+  {
+    postureType: "ARMREST_LEAN",
+    requiredLandmarks: CORE,
+    // Distinguishes a real armrest lean from two visually similar but
+    // non-posture cases (need_discussion #6: environment changes shouldn't
+    // alert on their own):
+    //   - chair slid sideways: shoulderCenterX changes, but shoulderCenterY
+    //     and bodyScale both stay put (pure lateral translation only).
+    //   - chair pushed back diagonally: shoulderCenterX/Y both change, same
+    //     as a real lean, but bodyScale shrinks too (moved farther from the
+    //     camera).
+    // A real lean onto one armrest moves the body diagonally *down* on
+    // screen (shoulderCenterY increases, MediaPipe y grows downward) plus
+    // sideways (shoulderCenterX), while staying the same distance from the
+    // camera (bodyScale unchanged) — the combination of "moved diagonally"
+    // AND "didn't change size" is what SIDE_SHIFT (still unimplemented)
+    // couldn't get from lateral position alone.
+    // shoulderCenterY threshold 2 -> 0.7: 6 live captures of a genuine
+    // armrest lean scored only 0.97-1.42 on this feature (X moved much more
+    // than Y for this user's chair/desk setup — 3.25-4.39), so 2 was too
+    // strict and blocked every one of them. 0.7 sits under the observed
+    // range with some margin. shoulderCenterX (3.25-4.39) and bodyScale
+    // (-0.06 to -0.66, all well under 1.5) already held up against the same
+    // captures, unchanged.
+    required: [
+      { feature: "shoulderCenterY", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
+      { feature: "shoulderCenterX", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 1.5, reference: "CALIBRATION" },
+    ],
+    supporting: ["shoulderTilt", "shoulderAsymmetry"],
+    reason: "body has shifted diagonally to one side without moving closer to or farther from the camera",
+  },
 ];

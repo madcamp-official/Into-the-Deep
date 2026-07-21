@@ -154,7 +154,8 @@ export function labelsFromEntries(
               marker.label === "BACKWARD_LEAN" ||
               marker.label === "CHIN_TUCK" ||
               marker.label === "TORSO_TWIST" ||
-              marker.label === "SHOULDERS_ONLY_TWIST"
+              marker.label === "SHOULDERS_ONLY_TWIST" ||
+              marker.label === "ARMREST_LEAN"
             ? "SETTLING"
             : marker.label,
         });

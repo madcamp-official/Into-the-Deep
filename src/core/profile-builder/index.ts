@@ -30,6 +30,10 @@ const PROFILE_FEATURES = [
   // capture button (feature values present, no score shown).
   "handFaceDistance",
   "handShoulderDistance",
+  // Needed as calibration baselines for ARMREST_LEAN's raw (non-scale-
+  // normalized) screen-position conditions.
+  "shoulderCenterX",
+  "shoulderCenterY",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {

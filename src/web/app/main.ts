@@ -165,6 +165,7 @@ async function main() {
     { value: "CHIN_TUCK", text: "Chin tuck" },
     { value: "TORSO_TWIST", text: "Torso twist" },
     { value: "SHOULDERS_ONLY_TWIST", text: "Shoulders only twist" },
+    { value: "ARMREST_LEAN", text: "Armrest lean" },
   ];
   for (const scenario of scenarios) {
     const option = document.createElement("option");
@@ -1068,7 +1069,8 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "BACKWARD_LEAN" ||
     label === "CHIN_TUCK" ||
     label === "TORSO_TWIST" ||
-    label === "SHOULDERS_ONLY_TWIST";
+    label === "SHOULDERS_ONLY_TWIST" ||
+    label === "ARMREST_LEAN";
 }
 
 function scenarioName(label: ScenarioLabel["label"]): string {
