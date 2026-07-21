@@ -21,60 +21,53 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 70, action: "SESSION_ENDED" },
 ];
 
-// Trimmed to only scenarios with an active rule to test (v0/v2's
-// sustainedSeconds is 1.5s at most now, v0 is instant, so each scenario only
-// needs a few settle seconds + a short hold, not the original long
-// pre-roll/hold pattern). Dropped entirely: SIDE_SHIFT (never implemented —
-// no body-relative "moved sideways" feature exists), ROUNDED_SHOULDERS
-// (rule deleted this session, no discriminating feature), CLOSE_TO_CAMERA
-// (no rule targets it directly — it's a known FORWARD_LEAN contamination
-// case, explicitly left out of scope). CAMERA_CHANGE is intentionally
-// manual because the operator must physically move the camera or laptop
-// during that scenario.
+// Only scenarios whose label matches an active postureType in
+// posture-rules/index.ts, plus NORMAL_WORK as the required baseline.
+// Dropped: TRANSIENT_ACTION/LEFT_LEAN/RIGHT_LEAN/SIDE_SHIFT/CLOSE_TO_CAMERA
+// (no matching rule — SIDE_SHIFT and CLOSE_TO_CAMERA specifically have no
+// discriminating feature at all, LEFT_LEAN/RIGHT_LEAN/TRANSIENT_ACTION are
+// ScenarioLabel-only categories, not a rule's postureType) and
+// ROUNDED_SHOULDERS/CHIN_TUCK (rules deleted this session). Added
+// HEAD_DOWN, which has an active rule but wasn't in the script before.
 export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
-  { atSeconds: 15, action: "SCENARIO_STARTED", label: "TRANSIENT_ACTION" },
-  { atSeconds: 20, action: "SCENARIO_ENDED", label: "TRANSIENT_ACTION" },
-  { atSeconds: 25, action: "SCENARIO_STARTED", label: "FORWARD_LEAN" },
-  { atSeconds: 27, action: "DRIFT_ONSET", label: "FORWARD_LEAN" },
-  { atSeconds: 35, action: "SCENARIO_ENDED", label: "FORWARD_LEAN" },
-  { atSeconds: 40, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
-  { atSeconds: 42, action: "DRIFT_ONSET", label: "FORWARD_HEAD" },
-  { atSeconds: 50, action: "SCENARIO_ENDED", label: "FORWARD_HEAD" },
-  { atSeconds: 55, action: "SCENARIO_STARTED", label: "LEFT_LEAN" },
-  { atSeconds: 57, action: "DRIFT_ONSET", label: "LEFT_LEAN" },
-  { atSeconds: 65, action: "SCENARIO_ENDED", label: "LEFT_LEAN" },
-  { atSeconds: 70, action: "SCENARIO_STARTED", label: "RIGHT_LEAN" },
-  { atSeconds: 72, action: "DRIFT_ONSET", label: "RIGHT_LEAN" },
-  { atSeconds: 80, action: "SCENARIO_ENDED", label: "RIGHT_LEAN" },
-  { atSeconds: 85, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
-  { atSeconds: 87, action: "DRIFT_ONSET", label: "HEAD_TURN" },
-  { atSeconds: 95, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
-  { atSeconds: 100, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
-  { atSeconds: 102, action: "DRIFT_ONSET", label: "HEAD_TILT" },
-  { atSeconds: 110, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
-  { atSeconds: 115, action: "SCENARIO_STARTED", label: "CHIN_REST" },
-  { atSeconds: 117, action: "DRIFT_ONSET", label: "CHIN_REST" },
-  { atSeconds: 125, action: "SCENARIO_ENDED", label: "CHIN_REST" },
-  { atSeconds: 130, action: "SCENARIO_STARTED", label: "HEAD_BACK" },
-  { atSeconds: 132, action: "DRIFT_ONSET", label: "HEAD_BACK" },
-  { atSeconds: 140, action: "SCENARIO_ENDED", label: "HEAD_BACK" },
-  { atSeconds: 145, action: "SCENARIO_STARTED", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 147, action: "DRIFT_ONSET", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 155, action: "SCENARIO_ENDED", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 160, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
-  { atSeconds: 162, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
-  { atSeconds: 170, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  { atSeconds: 175, action: "SCENARIO_STARTED", label: "ARMREST_LEAN" },
-  { atSeconds: 177, action: "DRIFT_ONSET", label: "ARMREST_LEAN" },
-  { atSeconds: 185, action: "SCENARIO_ENDED", label: "ARMREST_LEAN" },
-  { atSeconds: 190, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
-  { atSeconds: 192, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
-  { atSeconds: 200, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
-  { atSeconds: 205, action: "SCENARIO_STARTED", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 207, action: "DRIFT_ONSET", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 215, action: "SCENARIO_ENDED", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 220, action: "SESSION_ENDED" },
+  { atSeconds: 15, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
+  { atSeconds: 17, action: "DRIFT_ONSET", label: "FORWARD_HEAD" },
+  { atSeconds: 25, action: "SCENARIO_ENDED", label: "FORWARD_HEAD" },
+  { atSeconds: 30, action: "SCENARIO_STARTED", label: "HEAD_DOWN" },
+  { atSeconds: 32, action: "DRIFT_ONSET", label: "HEAD_DOWN" },
+  { atSeconds: 40, action: "SCENARIO_ENDED", label: "HEAD_DOWN" },
+  { atSeconds: 45, action: "SCENARIO_STARTED", label: "FORWARD_LEAN" },
+  { atSeconds: 47, action: "DRIFT_ONSET", label: "FORWARD_LEAN" },
+  { atSeconds: 55, action: "SCENARIO_ENDED", label: "FORWARD_LEAN" },
+  { atSeconds: 60, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
+  { atSeconds: 62, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
+  { atSeconds: 70, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
+  { atSeconds: 75, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
+  { atSeconds: 77, action: "DRIFT_ONSET", label: "HEAD_TURN" },
+  { atSeconds: 85, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
+  { atSeconds: 90, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
+  { atSeconds: 92, action: "DRIFT_ONSET", label: "HEAD_TILT" },
+  { atSeconds: 100, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
+  { atSeconds: 105, action: "SCENARIO_STARTED", label: "CHIN_REST" },
+  { atSeconds: 107, action: "DRIFT_ONSET", label: "CHIN_REST" },
+  { atSeconds: 115, action: "SCENARIO_ENDED", label: "CHIN_REST" },
+  { atSeconds: 120, action: "SCENARIO_STARTED", label: "HEAD_BACK" },
+  { atSeconds: 122, action: "DRIFT_ONSET", label: "HEAD_BACK" },
+  { atSeconds: 130, action: "SCENARIO_ENDED", label: "HEAD_BACK" },
+  { atSeconds: 135, action: "SCENARIO_STARTED", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 137, action: "DRIFT_ONSET", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 145, action: "SCENARIO_ENDED", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 150, action: "SCENARIO_STARTED", label: "ARMREST_LEAN" },
+  { atSeconds: 152, action: "DRIFT_ONSET", label: "ARMREST_LEAN" },
+  { atSeconds: 160, action: "SCENARIO_ENDED", label: "ARMREST_LEAN" },
+  { atSeconds: 165, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
+  { atSeconds: 167, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
+  { atSeconds: 175, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
+  { atSeconds: 180, action: "SCENARIO_STARTED", label: "SHOULDERS_ONLY_TWIST" },
+  { atSeconds: 182, action: "DRIFT_ONSET", label: "SHOULDERS_ONLY_TWIST" },
+  { atSeconds: 190, action: "SCENARIO_ENDED", label: "SHOULDERS_ONLY_TWIST" },
+  { atSeconds: 195, action: "SESSION_ENDED" },
 ];
 
 export function getNextDevelopmentStep(

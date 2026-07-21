@@ -158,6 +158,7 @@ async function main() {
     { value: "TRANSIENT_ACTION", text: "Transient action" },
     { value: "FORWARD_LEAN", text: "Forward lean" },
     { value: "FORWARD_HEAD", text: "Forward head / turtle neck" },
+    { value: "HEAD_DOWN", text: "Head down" },
     { value: "LEFT_LEAN", text: "Left lean" },
     { value: "RIGHT_LEAN", text: "Right lean" },
     { value: "SIDE_SHIFT", text: "Side shift" },
