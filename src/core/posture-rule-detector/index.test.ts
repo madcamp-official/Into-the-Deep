@@ -179,20 +179,17 @@ describe("PostureRuleDetector", () => {
     expect(matches.some((match) => match.postureType === "HEAD_TURN")).toBe(false);
   });
 
-  // HEAD_TURN disabled for now (decided to drop it, not delete it — see
-  // posture-rules/index.ts), so this positive-match test is moot until it's
-  // re-enabled.
-  // it("requires both yaw and horizontal head displacement for a head turn", () => {
-  //   const profile = createPostureProfile();
-  //   const matches = evaluatePostureRules(
-  //     createPostureFrame({ yawProxy: 0.3, headXRatio: 0.15, headRoll: 0 }),
-  //     profile,
-  //     createInitialMADProfile(),
-  //     DEFAULT_POSTURE_RULES,
-  //   );
-  //
-  //   expect(matches.some((match) => match.postureType === "HEAD_TURN")).toBe(true);
-  // });
+  it("requires both yaw and horizontal head displacement for a head turn", () => {
+    const profile = createPostureProfile();
+    const matches = evaluatePostureRules(
+      createPostureFrame({ yawProxy: 0.3, headXRatio: 0.15, headRoll: 0 }),
+      profile,
+      createInitialMADProfile(),
+      DEFAULT_POSTURE_RULES,
+    );
+
+    expect(matches.some((match) => match.postureType === "HEAD_TURN")).toBe(true);
+  });
 });
 
 function createProfile(): UserProfile {

@@ -314,6 +314,12 @@ async function main() {
   let postureDetector: PostureRuleDetector | null = null;
   let v2PostureDetector: PostureRuleDetector | null = null;
   let madProfile = createInitialMADProfile();
+  // v0 never gets setMADProfile calls (it's the frozen, zero-latency
+  // baseline), but `madProfile` above is continuously reassigned by
+  // v2MadUpdater during stable windows. Kept as a separate reference,
+  // frozen at calibration, so the capture panel can show the score v0
+  // actually used instead of silently showing v2's drifted one for both.
+  let v0MadProfile = createInitialMADProfile();
   let v2MadUpdater = new V2MadUpdater(madProfile);
   let calibrationFrames: FrameFeature[] | null = null;
   let calibrationCameraFrames: CameraRawFeature[] | null = null;
@@ -472,6 +478,7 @@ async function main() {
     profile = nextProfile;
     cameraProfile = nextCameraProfile;
     madProfile = nextMadProfile;
+    v0MadProfile = nextMadProfile;
     // v0 is the zero-latency baseline: alert fires the instant a rule
     // matches, no sustained-dwell delay and no motion-energy hold.
     postureDetector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 0 });
@@ -510,7 +517,7 @@ async function main() {
     const header =
       `--- capture #${captureCount} (${new Date().toLocaleTimeString()}) ` +
       `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ---`;
-    const body = formatFeatureSnapshot(previousFeature, profile, madProfile);
+    const body = formatFeatureSnapshot(previousFeature, profile, v0MadProfile, madProfile);
     captureOutput.textContent = [header, body, "", captureOutput.textContent].join("\n");
   };
 
@@ -1448,32 +1455,45 @@ function medianNumber(values: readonly number[]): number {
 // calibration-relative MAD score ((value - center) / MAD) the rule engine
 // actually checks — so a captured posture can be read off directly against
 // posture-rules/index.ts's thresholds instead of re-deriving it by hand.
+//
+// v0 and v2 can score the *same* feature differently: v0 never gets
+// setMADProfile calls (frozen at calibration), while v2's MAD profile keeps
+// adapting during stable windows. Take both and show only one score when
+// they agree, or both labeled when they've diverged — otherwise this panel
+// silently shows v2's basis for both, which can make v0's actual match/no-
+// match decision look inexplicable (confirmed live: a captured
+// faceToShoulderRatio score of 0.64 looked like it should fail FORWARD_HEAD's
+// 0.8 threshold, yet v0 had matched — v0's real, frozen-MAD score was above
+// 0.8, this panel was just showing v2's drifted one).
 function formatFeatureSnapshot(
   feature: FrameFeature,
   profile: UserProfile | null,
-  madProfile: MADProfile,
+  v0MadProfile: MADProfile,
+  v2MadProfile: MADProfile,
 ): string {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(feature)) {
     if (typeof value !== "number" || key === "timestamp") continue;
     const featureName = key as PostureFeatureName;
-    const score = normalizeFeature(
-      value,
-      profile?.originalCenters[featureName],
-      madProfile.values[featureName],
-    );
+    const center = profile?.originalCenters[featureName];
+    const v0Score = normalizeFeature(value, center, v0MadProfile.values[featureName]);
+    const v2Score = normalizeFeature(value, center, v2MadProfile.values[featureName]);
     // Some rule conditions (e.g. CHIN_REST's handFaceDistance) use
     // reference: "ABSOLUTE" (center 0) instead of CALIBRATION, which the
-    // `score` above doesn't reflect. Show it whenever the calibration
-    // center isn't set, so what's on screen matches what that condition
-    // actually sees.
+    // scores above don't reflect. Show it whenever the calibration center
+    // isn't set, so what's on screen matches what that condition actually
+    // sees. v0/v2 use the same MAD basis for this so one value is enough.
     const absoluteScore =
-      score === undefined
-        ? normalizeFeature(value, 0, madProfile.values[featureName])
-        : undefined;
+      v0Score === undefined ? normalizeFeature(value, 0, v0MadProfile.values[featureName]) : undefined;
+    const scoresDiffer =
+      v0Score !== undefined && v2Score !== undefined && Math.abs(v0Score - v2Score) > 0.01;
     lines.push(
       `${key}: ${value.toFixed(3)}` +
-        (score !== undefined ? `  (score=${score.toFixed(2)})` : "") +
+        (scoresDiffer
+          ? `  (v0 score=${v0Score.toFixed(2)}, v2 score=${(v2Score as number).toFixed(2)})`
+          : v0Score !== undefined
+            ? `  (score=${v0Score.toFixed(2)})`
+            : "") +
         (absoluteScore !== undefined ? `  (abs=${absoluteScore.toFixed(2)})` : ""),
     );
   }
