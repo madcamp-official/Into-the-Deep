@@ -13,6 +13,12 @@ import { DEFAULT_POSTURE_RULES } from "../posture-rules";
 
 const AMBIGUITY_RATIO = 0.9;
 
+// HEAD_TURN fires constantly during normal conversation (turning to talk to
+// someone off-camera), and user feedback flagged the resulting alarms as
+// distracting during meetings. Still detected/recorded as BAD like any other
+// posture — just never promoted to an alert.
+const SILENT_POSTURES: ReadonlySet<PostureRule["postureType"]> = new Set(["HEAD_TURN"]);
+
 export interface PostureRuleDetectorOptions {
   rules?: readonly PostureRule[];
   sustainedSeconds?: number;
@@ -76,7 +82,7 @@ export class PostureRuleDetector {
     return {
       timestamp: feature.timestamp,
       state: "BAD",
-      alert: sustained,
+      alert: sustained && !SILENT_POSTURES.has(selected.postureType),
       postureType: selected.postureType,
       matchedFeatures: selected.matchedFeatures,
       postureCandidates: matches.map(({ postureType, score }) => ({ postureType, score })),
