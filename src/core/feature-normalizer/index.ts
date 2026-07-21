@@ -12,16 +12,16 @@ import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 // get smoothed hard while fast frames (real posture changes) get smoothed
 // gently, cutting lag without giving back the jitter suppression.
 //
-// MIN_CUTOFF chosen to reproduce roughly the old alpha=0.3 EMA's smoothing
-// strength at rest at a typical 30fps frame time (dt~0.033s): solving
-// dt/(dt + 1/(2*pi*cutoff)) = 0.3 for cutoff gives ~2.07, so today's
-// posture-rules/index.ts thresholds (all tuned against the old smoothing)
-// shouldn't need blanket re-tuning. BETA (speed sensitivity) is a starting
-// value from the filter's own recommended default (start near 0, raise
-// until fast-motion lag is gone) — not yet verified live against a real
-// session; adjust if genuine posture transitions still feel laggy or if
-// jitter suppression feels weaker than before.
-const ONE_EURO_MIN_CUTOFF = 2.07;
+// MIN_CUTOFF initially chosen to reproduce roughly the old alpha=0.3 EMA's
+// smoothing strength at rest (~2.07, solving dt/(dt + 1/(2*pi*cutoff)) = 0.3
+// at 30fps). User reported still-live jitter and asked for stronger
+// suppression — lowering cutoff increases smoothing (lower cutoff -> larger
+// tau -> smaller alpha), so 1.0 roughly halves the effective at-rest alpha
+// to ~0.17. This likely needs some posture-rules/index.ts threshold
+// re-verification live, unlike the original 2.07 pick. BETA (speed
+// sensitivity) unchanged — not yet verified live against a real session;
+// adjust if genuine posture transitions feel laggy.
+const ONE_EURO_MIN_CUTOFF = 1.0;
 const ONE_EURO_BETA = 0.05;
 
 // How far a single frame's raw (pre-smoothing) reading is allowed to move
