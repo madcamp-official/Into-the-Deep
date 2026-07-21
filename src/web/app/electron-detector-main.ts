@@ -1,7 +1,10 @@
 import { startWebcam } from "../camera-adapter/webcam";
 import {
+  anchorFromLandmarks,
   createPoseLandmarker,
   detectPoseForVideoFrame,
+  selectPrimaryLandmarks,
+  type PersonAnchor,
 } from "../camera-adapter/pose-landmarker";
 import {
   createHandLandmarker,
@@ -86,18 +89,30 @@ async function main(): Promise<void> {
   let alertSince: number | null = null;
   let fairyShowing = false;
   let fairyLastShownAt = 0;
+  // Where the calibrated user's shoulders were last seen — seeded from the
+  // camera profile's calibration median so tracking is correct from the
+  // first frame, even if someone else is already in frame when this
+  // window starts up. See selectPrimaryLandmarks in pose-landmarker.ts.
+  let trackedAnchor: PersonAnchor | null = {
+    x: stored.cameraProfile.shoulderCenterX,
+    y: stored.cameraProfile.shoulderCenterY,
+  };
 
   function loop(): void {
     const timestamp = performance.now();
     const result = detectPoseForVideoFrame(landmarker, video, timestamp);
-    const landmarks = result.landmarks[0];
+    const landmarks = selectPrimaryLandmarks(result, trackedAnchor);
     const quality = assessLandmarkQuality(landmarks, timestamp);
 
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
+      // trackedAnchor deliberately kept as-is through a brief dropout —
+      // see the matching note in product-main.ts's loop().
       setTimeout(loop, LOOP_INTERVAL_MS);
       return;
     }
+
+    trackedAnchor = anchorFromLandmarks(landmarks) ?? trackedAnchor;
 
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
     const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);
