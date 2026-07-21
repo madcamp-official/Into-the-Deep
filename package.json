@@ -1,7 +1,7 @@
 {
   "name": "posture-core",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Webcam-based posture coach with a fairy overlay nudge",
   "author": "madcamp-official",
   "type": "module",
@@ -44,7 +44,7 @@
       "package.json"
     ],
     "win": {
-      "target": ["nsis", "zip"]
+      "target": ["nsis"]
     },
     "nsis": {
       "oneClick": false,
@@ -53,19 +53,11 @@
       "createStartMenuShortcut": true
     },
     "mac": {
-      "target": [
-        { "target": "dmg", "arch": ["universal"] },
-        { "target": "zip", "arch": ["universal"] }
-      ],
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
       "category": "public.app-category.healthcare-fitness",
       "extendInfo": {
         "NSCameraUsageDescription": "카메라로 자세를 인식해서 알려드리기 위해 필요합니다."
       }
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "madcamp-official",
-      "repo": "Into-the-Deep"
     }
   }
 }

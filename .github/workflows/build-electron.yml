@@ -10,12 +10,14 @@ name: Build Electron App
 #
 # Two ways this runs:
 #  - push to the branch / manual dispatch: build + upload as a plain
-#    Actions artifact (--publish never), for quick "does it still build"
-#    checks. Downloadable from the run page, but not a versioned release.
-#  - pushing a "v*" tag: also publishes a GitHub Release with the
-#    installers attached (--publish always), via electron-builder's own
-#    GitHub publish support — no PAT needed, the auto-provided
-#    GITHUB_TOKEN is enough given contents:write below.
+#    Actions artifact, for quick "does it still build" checks. Downloadable
+#    from the run page, but not a versioned release.
+#  - pushing a "v*" tag: also creates/updates a draft GitHub Release and
+#    attaches just the one installer teammates actually need per OS
+#    (PostureFairy-Setup-*.exe / *.dmg) — deliberately NOT using
+#    electron-builder's own --publish (it also uploads latest.yml +
+#    *.blockmap auto-update metadata we don't use, which only added
+#    confusion about which of ~11 assets to download).
 on:
   workflow_dispatch:
   push:
@@ -50,15 +52,12 @@ jobs:
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        run: npm run build && npx electron-builder --win --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist:win
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
-        run: npm run build && npx electron-builder --mac --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        run: npm run dist:mac
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Unsigned build: no Apple Developer certificate in this repo.
           # Without this, electron-builder tries (and fails) to find one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -70,6 +69,13 @@ jobs:
           if-no-files-found: warn
           path: |
             release/*.exe
-            release/*.zip
             release/*.dmg
-            release/*.blockmap
+
+      - name: Attach installer to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            release/*.exe
+            release/*.dmg
