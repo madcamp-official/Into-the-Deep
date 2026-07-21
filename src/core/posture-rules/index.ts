@@ -20,12 +20,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      // Lowered 0.8 -> 0.6: a recorded development session (avg 0.66 across
-      // the whole FORWARD_HEAD segment) and a fresh live capture (0.72)
-      // both landed just under 0.8, causing HEAD_DOWN (pitchProxy alone) to
-      // win instead as the sole match. Two consistent readings under the
-      // old threshold, not a one-off — 0.6 clears both.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.6, reference: "CALIBRATION" },
+      // Lowered 0.8 -> 0.6 earlier this project for a different reason (see
+      // git history) — since then, user reported this rule firing too
+      // often as "too sensitive" on both v0 and v2. A fresh session replay
+      // showed why raising it is actually safe here: NORMAL_WORK's false-
+      // positive rate barely moves with threshold (9.2% at 0.6 -> 7.8% at
+      // 0.8), but that's an acceptable tradeoff against reduced sensitivity
+      // to the user's actual complaint. Raised back to 0.8; genuine
+      // FORWARD_HEAD recall in that same replay drops from 69.4% -> 37.0%
+      // at this threshold (real cost, accepted deliberately) — if HEAD_DOWN
+      // starts winning instead for genuine turtle-neck cases the way it did
+      // before 0.6 was tried, that's the next thing to check live.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
@@ -148,11 +154,21 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // condition outright (not just losing on evidence score). -1.3 clears
     // all three while staying well past HEAD_BACK/HEAD_TURN's reference
     // values (-0.51/-0.91) for this same feature.
+    // faceToShoulderRatio swapped out for shoulderCenterY: live captures
+    // across several different calibration sessions showed faceToShoulderRatio
+    // swings wildly and unpredictably as lean depth increases (-2.15, -1.09,
+    // -0.13, 0.00, +1.03 — the deepest leans actually flipped positive,
+    // structurally failing this rule's own LT -1 requirement and leaving the
+    // posture undetected or misclassified as FORWARD_HEAD/TORSO_TWIST
+    // instead). shoulderCenterY was consistently elevated (1.48-3.60) across
+    // every one of those same captures regardless of depth or session —
+    // reclining moves the torso's vertical screen position in a way
+    // faceToShoulderRatio doesn't reliably track.
     required: [
-      { feature: "faceToShoulderRatio", operator: "LT", threshold: -1, reference: "CALIBRATION" },
+      { feature: "shoulderCenterY", operator: "GT", threshold: 1.5, reference: "CALIBRATION" },
       { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.3, reference: "CALIBRATION" },
     ],
-    supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
+    supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy", "faceToShoulderRatio"],
     reason: "upper body is leaning backward",
     // Confirmed live: leaning back in a chair naturally also pitches the
     // head back (HEAD_BACK's pitchProxy) and nudges correctedYaw past
@@ -167,11 +183,11 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // re-broke this fix — confirmed live, a pure backward lean (no actual
     // twist) flipped to TORSO_TWIST whenever correctedYaw's noise crossed
     // its ABS_GT 2 threshold (observed score 2.46 while only leaning back).
-    // Safe to win outright rather than risk on evidence score: a genuine
-    // torso twist inflates faceToShoulderRatio to strongly positive values
-    // (TORSO_TWIST's own comment below, ~5-7), which fails this rule's own
-    // faceToShoulderRatio LT -1 requirement, so this can't steal real
-    // twists — it only wins the "pure lean, no twist" case it's meant to.
+    // Safe to win outright rather than risk on evidence score: three
+    // confirmed live genuine-twist captures (rotating shoulders in place, no
+    // lean) scored shoulderCenterY -0.62/-0.03/0.16 — comfortably under this
+    // rule's own GT 1.5 requirement — so this still can't steal real twists,
+    // it only wins the "pure lean, no twist" case it's meant to.
     priority: 2.1,
   },
   {
