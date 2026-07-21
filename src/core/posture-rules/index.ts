@@ -105,12 +105,26 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // conditions together (torso actually moved away from the camera, not
     // just the face angle changing) fixes both the false positives and
     // the HEAD_BACK/HEAD_TURN starvation without touching those rules.
+    // shoulderWidthRatio threshold -1.5 -> -1.3: three live captures of a
+    // genuine sustained backward lean scored -1.82/-1.41/-1.40 — two of
+    // three fell just short of -1.5, failing this rule's own required
+    // condition outright (not just losing on evidence score). -1.3 clears
+    // all three while staying well past HEAD_BACK/HEAD_TURN's reference
+    // values (-0.51/-0.91) for this same feature.
     required: [
       { feature: "faceToShoulderRatio", operator: "LT", threshold: -1, reference: "CALIBRATION" },
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.5, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.3, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
     reason: "upper body is leaning backward",
+    // Confirmed live: leaning back in a chair naturally also pitches the
+    // head back (HEAD_BACK's pitchProxy) and nudges correctedYaw past
+    // TORSO_TWIST's threshold, so even when both of *this* rule's own
+    // (more specific, 2-condition) requirements clear, its evidence score
+    // sat close enough to those two that the ambiguity gate returned
+    // UNKNOWN instead of picking a winner. priority 1.3 gives a genuine
+    // double-condition match enough of an edge to win outright.
+    priority: 1.3,
   },
   {
     postureType: "HEAD_TURN",
@@ -199,7 +213,19 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // undefined (failing the required check) if handFaceDistance itself
     // couldn't be computed, so no separate landmark gate is needed here.
     requiredLandmarks: CORE,
-    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" }],
+    // Switched off CALIBRATION reference: confirmed live twice now that
+    // handFaceDistance's calibration center is unstable across sessions —
+    // a hand raised near the face but well off to the side (raw distance
+    // ~1.72-1.75, farther than any genuine rest seen so far) scored MORE
+    // extreme (-24.86/-25.49) than actual chin-rests at a *closer* raw
+    // distance (~1.05-1.24, scored -12 to -35 in earlier sessions). The
+    // calibration median for this feature depends entirely on incidental
+    // hand position during that one 5-second window, so it isn't a
+    // meaningful "neutral" reference the way head/shoulder features are.
+    // ABS_LT against 0 with the default MAD (0.05) instead uses a fixed,
+    // session-independent scale: genuine rests normalized to ~21-25, the
+    // off-to-the-side raise to ~34-35 — 28 sits in the gap.
+    required: [{ feature: "handFaceDistance", operator: "ABS_LT", threshold: 28, reference: "ABSOLUTE" }],
     // handShoulderDistance added after live capture-button testing: once
     // profile-builder started giving handFaceDistance a real CALIBRATION
     // center (see profile-builder fix), a genuine chin-rest scored
