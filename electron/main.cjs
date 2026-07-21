@@ -30,6 +30,14 @@ const { autoUpdater } = require("electron-updater");
 
 const devServerUrl = app.isPackaged ? null : getDevServerUrlFromArgs();
 
+// Packaged installer/taskbar/dock icon comes from build/icon.png via
+// electron-builder's auto-discovery (no config needed — see package.json
+// comment-free "build" section). This is the same source asset, just for
+// the runtime uses electron-builder's icon step doesn't cover: the tray
+// icon, and each BrowserWindow's icon (mainly matters in dev, where there's
+// no packaged exe to carry an embedded icon resource).
+const APP_ICON_PATH = path.join(__dirname, "assets", "logo", "fairy-icon-256.png");
+
 // Tray-driven app that mostly never fully quits on its own (launches at
 // login, only exits via the tray's "종료"), so a single check on startup
 // isn't enough to catch a release published mid-session — recheck on this
@@ -63,6 +71,7 @@ function loadPage(win, htmlFileName) {
 function createDetectorWindow() {
   detectorWindow = new BrowserWindow({
     show: false,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -104,6 +113,7 @@ function createOverlayWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     focusable: false,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -141,6 +151,7 @@ function openCalibrationWindow() {
   calibrationWindow = new BrowserWindow({
     width: 900,
     height: 720,
+    icon: APP_ICON_PATH,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -162,18 +173,10 @@ function openCalibrationWindow() {
 }
 
 function createTrayIcon() {
-  // Solid-color square built at runtime (no bundled asset needed) —
-  // Electron's nativeImage.createFromBuffer accepts raw BGRA pixel data
-  // directly. TODO: replace with a real designed icon.
-  const size = 16;
-  const buffer = Buffer.alloc(size * size * 4);
-  for (let i = 0; i < size * size; i += 1) {
-    buffer[i * 4 + 0] = 0x82; // B
-    buffer[i * 4 + 1] = 0xbf; // G
-    buffer[i * 4 + 2] = 0x4f; // R  (0x4fbf82 accent green, BGRA order)
-    buffer[i * 4 + 3] = 0xff; // A
-  }
-  return nativeImage.createFromBuffer(buffer, { width: size, height: size });
+  // Windows tray/macOS menu bar both want a small icon (16x16, scaled up
+  // for HiDPI) — resize down from the same 256px source everything else
+  // uses rather than keeping a separate tiny asset to maintain.
+  return nativeImage.createFromPath(APP_ICON_PATH).resize({ width: 16, height: 16 });
 }
 
 // Downloads silently in the background and applies itself the next time
