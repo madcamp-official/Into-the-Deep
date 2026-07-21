@@ -361,6 +361,17 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // barely moved. 2 sits well above the twist noise ceiling and well
       // below the lean-contamination floor.
       { feature: "shoulderCenterY", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
+      // shoulderCenterX ABS_LT added: sliding the chair sideways in front of
+      // a fixed camera changes the viewing angle enough to also move
+      // shoulderWidthRatio/correctedYaw past this rule's thresholds (live
+      // capture: shoulderXOffset/shoulderYOffset scores 38/83 confirming a
+      // large chair slide, shoulderCenterX -2.35) — the same "no body-
+      // relative sideways-move feature" gap SIDE_SHIFT has always had
+      // (see comment above), just landing on this rule instead. The three
+      // genuine live torso-twist captures (rotating in place, no lean, no
+      // slide) scored shoulderCenterX 0.40/-0.61/-0.56 — comfortably under
+      // 1.5, while the chair-slide capture's -2.35 clears well past it.
+      { feature: "shoulderCenterX", operator: "ABS_LT", threshold: 1.5, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
     reason: "torso direction differs from the calibrated forward direction",
