@@ -58,14 +58,11 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_DOWN",
     requiredLandmarks: EYES,
-    // Distinct from FORWARD_HEAD: confirmed live that holding the head
-    // pitched down (chin toward chest, no craning toward the camera) read
-    // as normal, because faceToShoulderRatio doesn't respond to pure
-    // downward pitch. pitchProxy is the direct signal for that motion on
-    // its own. feature_discussion's #14 ("고개 숙여서 아래 보기") lists this
-    // as a *transient* action (writing, glancing down), but a *sustained*
-    // hold of the same pitch is a distinct posture worth its own alert
-    // rather than being silently absorbed into FORWARD_HEAD.
+    // Distinct from FORWARD_HEAD: pitchProxy is the direct signal for a
+    // downward pitch. feature_discussion's #14 ("고개 숙여서 아래 보기")
+    // lists this as a *transient* action (writing, glancing down), but a
+    // *sustained* hold of the same pitch is a distinct posture worth its
+    // own alert rather than being silently absorbed into FORWARD_HEAD.
     // Threshold raised 0.7 -> 1.8: replayed a real recorded session
     // (session-1784560098508.jsonl) through the current rules —
     // NORMAL_WORK/SETTLING pitchProxy average 0.4-0.53, so 0.7 was far too
@@ -75,7 +72,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // drift seen repeatedly this session) and failed to match at all. 1.3
     // clears it while staying well above the jsonl session's ~0.5 noise
     // ceiling.
-    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.3, reference: "CALIBRATION" }],
+    // Raised again 1.3 -> 2.2: contrary to this rule's original assumption,
+    // faceToShoulderRatio *does* creep up somewhat for a pure head-down too
+    // (live capture: 0.72, just past FORWARD_HEAD's own 0.7 threshold) —
+    // so a genuine turtle-neck-while-looking-slightly-down blend can score
+    // pitchProxy 1.82, just past the old 1.3 bar, and out-evidence
+    // FORWARD_HEAD despite being the wrong call (user confirmed it was
+    // turtle neck, not head-down). A confirmed genuine pure head-down in
+    // the same session scored pitchProxy 3.46 — comfortably clears 2.2,
+    // while 1.82 no longer does and falls through to FORWARD_HEAD instead.
+    required: [{ feature: "pitchProxy", operator: "GT", threshold: 2.2, reference: "CALIBRATION" }],
     supporting: ["headYRatio", "headShoulderDistanceRatio"],
     reason: "head is pitched down relative to the calibrated direction",
     // Same story as FORWARD_HEAD's priority: pitchProxy alone rises for

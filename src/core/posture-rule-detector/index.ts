@@ -36,6 +36,14 @@ const SILENT_POSTURES: ReadonlySet<PostureRule["postureType"]> = new Set(["HEAD_
 // reach/lean motion does.
 const DEFAULT_MOTION_SUSTAIN_MS = 250;
 
+// Without this, MOVING ended the instant motionEnergy dipped back under the
+// gate — user reported the hold feeling "too short," resuming rule
+// evaluation before the person had actually settled into wherever they
+// ended up. Once motion is confirmed, keep holding for this long after it
+// drops back under the gate too, giving a moment to stabilize before
+// judgment resumes.
+const DEFAULT_MOTION_SETTLE_MS = 600;
+
 // A held bad posture can drop out of every rule's required conditions for a
 // single frame purely from landmark jitter nudging a score just under its
 // threshold — previously that immediately cleared the dwell timer and
@@ -63,6 +71,11 @@ export interface PostureRuleDetectorOptions {
   // before a frame counts as genuine motion rather than single-frame
   // landmark jitter. Only meaningful when motionEnergyGate is set.
   motionSustainMs?: number;
+  // How long to keep holding judgment (state: MOVING) after motionEnergy
+  // drops back under motionEnergyGate, so the person has a moment to
+  // settle before rules resume evaluating. Only meaningful when
+  // motionEnergyGate is set.
+  motionSettleMs?: number;
   // How long a rule can stop matching before the dwell timer actually
   // clears and the detector reports STABLE. Bridges single-frame jitter
   // dropouts during an otherwise-held bad posture.
@@ -80,12 +93,14 @@ export class PostureRuleDetector {
   private badStartedAtByPosture = new Map<PostureRule["postureType"], number>();
   private motionHoldStartedAt: number | null = null;
   private motionStreakStartedAt: number | null = null;
+  private motionSettleUntil: number | null = null;
   private noMatchStartedAt: number | null = null;
   private lastMatch: RuleMatch | null = null;
   private readonly rules: readonly PostureRule[];
   private readonly sustainedSeconds: number;
   private readonly motionEnergyGate: number | undefined;
   private readonly motionSustainMs: number;
+  private readonly motionSettleMs: number;
   private readonly noMatchGraceMs: number;
   private readonly profile: UserProfile;
   private madProfile: MADProfile;
@@ -101,6 +116,7 @@ export class PostureRuleDetector {
     this.sustainedSeconds = options.sustainedSeconds ?? 1.5;
     this.motionEnergyGate = options.motionEnergyGate;
     this.motionSustainMs = options.motionSustainMs ?? DEFAULT_MOTION_SUSTAIN_MS;
+    this.motionSettleMs = options.motionSettleMs ?? DEFAULT_MOTION_SETTLE_MS;
     this.noMatchGraceMs = options.noMatchGraceMs ?? DEFAULT_NO_MATCH_GRACE_MS;
   }
 
@@ -108,8 +124,13 @@ export class PostureRuleDetector {
     if (this.motionEnergyGate !== undefined) {
       const aboveGate = feature.motionEnergy >= this.motionEnergyGate;
       this.motionStreakStartedAt = aboveGate ? (this.motionStreakStartedAt ?? feature.timestamp) : null;
-      const isMoving =
+      const streakConfirmed =
         aboveGate && feature.timestamp - (this.motionStreakStartedAt ?? feature.timestamp) >= this.motionSustainMs;
+      if (streakConfirmed) {
+        this.motionSettleUntil = feature.timestamp + this.motionSettleMs;
+      }
+      const isMoving =
+        streakConfirmed || (this.motionSettleUntil !== null && feature.timestamp < this.motionSettleUntil);
       if (isMoving) {
         const holdStartedAt = this.motionHoldStartedAt ?? feature.timestamp;
         this.motionHoldStartedAt = holdStartedAt;
@@ -122,6 +143,7 @@ export class PostureRuleDetector {
         return { timestamp: feature.timestamp, state: "MOVING", alert: false, reason: [] };
       }
       this.motionHoldStartedAt = null;
+      this.motionSettleUntil = null;
     }
 
     const matches = evaluatePostureRules(feature, this.profile, this.madProfile, this.rules, quality);
