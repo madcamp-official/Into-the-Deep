@@ -48,6 +48,11 @@ export const LANDMARK_INDEX = {
   rightEye: 5,
   leftEar: 7,
   rightEar: 8,
+  // Closest available point to "chin" — BlazePose's 33-point layout has no
+  // dedicated chin/jaw landmark; Face Mesh (468 points) would, but that's a
+  // separate, much heavier model not worth it just for this.
+  mouthLeft: 9,
+  mouthRight: 10,
   leftShoulder: 11,
   rightShoulder: 12,
   // Elbows are only used for skeleton-overlay drawing continuity

@@ -4,6 +4,10 @@ import {
   createPoseLandmarker,
   detectPoseForVideoFrame,
 } from "../camera-adapter/pose-landmarker";
+import {
+  createHandLandmarker,
+  detectHandsForVideoFrame,
+} from "../camera-adapter/hand-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
 import {
@@ -211,6 +215,9 @@ async function main() {
 
   status.textContent = "loading MediaPipe pose landmarker...";
   const landmarker = await createPoseLandmarker();
+
+  status.textContent = "loading MediaPipe hand landmarker...";
+  const handLandmarker = await createHandLandmarker();
 
   status.textContent = "running";
 
@@ -642,7 +649,8 @@ async function main() {
 
     drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
 
-    const feature = toFrameFeature(landmarks, timestamp, previousFeature);
+    const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
+    const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);
     previousFeature = feature;
 
     if (!feature) {
@@ -835,8 +843,19 @@ function formatFeatureSnapshot(
       profile?.originalCenters[featureName],
       madProfile.values[featureName],
     );
+    // Some rule conditions (e.g. CHIN_REST's handFaceDistance) use
+    // reference: "ABSOLUTE" (center 0) instead of CALIBRATION, which the
+    // `score` above doesn't reflect. Show it whenever the calibration
+    // center isn't set, so what's on screen matches what that condition
+    // actually sees.
+    const absoluteScore =
+      score === undefined
+        ? normalizeFeature(value, 0, madProfile.values[featureName])
+        : undefined;
     lines.push(
-      `${key}: ${value.toFixed(3)}` + (score !== undefined ? `  (score=${score.toFixed(2)})` : ""),
+      `${key}: ${value.toFixed(3)}` +
+        (score !== undefined ? `  (score=${score.toFixed(2)})` : "") +
+        (absoluteScore !== undefined ? `  (abs=${absoluteScore.toFixed(2)})` : ""),
     );
   }
   return lines.join("\n");

@@ -10,6 +10,9 @@ export const RELIABILITY_THRESHOLDS = {
   // being visibility-checked.
   eyeMinConfidence: 0.5,
   earMinConfidence: 0.5,
+  // Backs handFaceDistance's mouth-center reference (closest available
+  // proxy to the chin — see pose-landmarker's LANDMARK_INDEX comment).
+  mouthMinConfidence: 0.5,
   // Wrists back hand-relative features (handFaceDistance,
   // handShoulderDistance per feature_discussion) — elbows are deliberately
   // not tracked per need_discussion's "팔꿈치 없애기" decision.

@@ -77,6 +77,8 @@ export type LandmarkName =
   | "rightEye"
   | "leftEar"
   | "rightEar"
+  | "mouthLeft"
+  | "mouthRight"
   | "leftShoulder"
   | "rightShoulder"
   | "leftHip"
