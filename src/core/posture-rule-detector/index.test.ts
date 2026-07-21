@@ -31,6 +31,59 @@ describe("PostureRuleDetector", () => {
     });
   });
 
+  it("bridges a single-frame jitter dropout without resetting the dwell timer", () => {
+    const profile = createProfile();
+    const rule: PostureRule = {
+      postureType: "FORWARD_HEAD",
+      requiredLandmarks: ["nose", "leftShoulder", "rightShoulder"],
+      required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+      supporting: [],
+      reason: "head is forward",
+    };
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({ values: { headXRatio: 0.1 } }), {
+      rules: [rule],
+      sustainedSeconds: 1.5,
+      noMatchGraceMs: 300,
+    });
+
+    expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    // Landmark jitter drops headXRatio below the rule's threshold for a
+    // single frame — held as BAD (not STABLE), dwell keeps counting.
+    expect(detector.update(createFrame(100, 0.05))).toMatchObject({
+      state: "BAD",
+      alert: false,
+      postureType: "FORWARD_HEAD",
+    });
+    expect(detector.update(createFrame(200, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    expect(detector.update(createFrame(1600, 0.31))).toMatchObject({ state: "BAD", alert: true });
+  });
+
+  it("reports STABLE once a no-match gap outlasts the grace window, and starts a fresh dwell afterward", () => {
+    const profile = createProfile();
+    const rule: PostureRule = {
+      postureType: "FORWARD_HEAD",
+      requiredLandmarks: ["nose", "leftShoulder", "rightShoulder"],
+      required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+      supporting: [],
+      reason: "head is forward",
+    };
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({ values: { headXRatio: 0.1 } }), {
+      rules: [rule],
+      sustainedSeconds: 1.5,
+      noMatchGraceMs: 300,
+    });
+
+    expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    expect(detector.update(createFrame(100, 0.05))).toMatchObject({ state: "BAD", alert: false });
+    expect(detector.update(createFrame(200, 0.05))).toMatchObject({ state: "BAD", alert: false });
+    // Gap has now outlasted noMatchGraceMs (450 - 100 = 350ms): a genuine
+    // return to normal, not jitter.
+    expect(detector.update(createFrame(450, 0.05))).toMatchObject({ state: "STABLE", alert: false });
+    // Posture matches again — this is a fresh dwell, not a continuation of
+    // the one from t=0 (which would already exceed sustainedSeconds by now).
+    expect(detector.update(createFrame(500, 0.31))).toMatchObject({ state: "BAD", alert: false });
+  });
+
   it("selects the candidate with the stronger normalized evidence", () => {
     const profile = createProfile();
     const rules: PostureRule[] = [
@@ -59,6 +112,59 @@ describe("PostureRuleDetector", () => {
 
     expect(event.postureType).toBe("FORWARD_HEAD");
     expect(event.postureCandidates?.[0].score).toBeGreaterThan(event.postureCandidates?.[1].score ?? 0);
+  });
+
+  it("only enters MOVING once elevated motionEnergy sustains past motionSustainMs, and preserves the dwell timer through it", () => {
+    const profile = createProfile();
+    const rule: PostureRule = {
+      postureType: "FORWARD_HEAD",
+      requiredLandmarks: ["nose", "leftShoulder", "rightShoulder"],
+      required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+      supporting: [],
+      reason: "head is forward",
+    };
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({ values: { headXRatio: 0.1 } }), {
+      rules: [rule],
+      sustainedSeconds: 1.5,
+      motionEnergyGate: 0.15,
+      motionSustainMs: 250,
+    });
+
+    expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    // A single elevated frame is just landmark jitter until it sustains
+    // past motionSustainMs — still evaluated normally.
+    expect(detector.update(createFrame(100, 0.31, 0.5))).toMatchObject({ state: "BAD", alert: false });
+    // Now sustained for 300ms (>= 250ms): promoted to MOVING, judgment held.
+    expect(detector.update(createFrame(400, 0.31, 0.5))).toMatchObject({ state: "MOVING", alert: false });
+    // Motion stops; dwell should keep counting from t=0, not from t=400.
+    expect(detector.update(createFrame(600, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    expect(detector.update(createFrame(1600, 0.31))).toMatchObject({ state: "BAD", alert: true });
+  });
+
+  it("drops a stale dwell timer once motion is held past the reset window", () => {
+    const profile = createProfile();
+    const rule: PostureRule = {
+      postureType: "FORWARD_HEAD",
+      requiredLandmarks: ["nose", "leftShoulder", "rightShoulder"],
+      required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+      supporting: [],
+      reason: "head is forward",
+    };
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({ values: { headXRatio: 0.1 } }), {
+      rules: [rule],
+      sustainedSeconds: 1.5,
+      motionEnergyGate: 0.15,
+      motionSustainMs: 250,
+    });
+
+    expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    // Continuously elevated for longer than ALERT_TIMING.holdResetSec (4s),
+    // fed as repeated frames like a real capture loop would: the old dwell
+    // shouldn't silently count the whole moving interval once it clears.
+    for (let timestamp = 200; timestamp <= 4600; timestamp += 200) {
+      detector.update(createFrame(timestamp, 0.31, 0.5));
+    }
+    expect(detector.update(createFrame(4700, 0.31))).toMatchObject({ state: "BAD", alert: false });
   });
 
   it("does not call a small yaw-only fluctuation a head turn", () => {
@@ -96,7 +202,7 @@ function createProfile(): UserProfile {
   };
 }
 
-function createFrame(timestamp: number, headXRatio: number): FrameFeature {
+function createFrame(timestamp: number, headXRatio: number, motionEnergy = 0.01): FrameFeature {
   return {
     timestamp,
     confidence: 0.95,
@@ -105,7 +211,7 @@ function createFrame(timestamp: number, headXRatio: number): FrameFeature {
     shoulderXOffset: 0,
     shoulderYOffset: 0,
     bodyScale: 1,
-    motionEnergy: 0.01,
+    motionEnergy,
     headXRatio,
   };
 }
