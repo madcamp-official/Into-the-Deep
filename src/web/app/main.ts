@@ -19,8 +19,13 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
+  parseJSONL,
   toJSONL,
 } from "../../evaluation/recorder";
+import {
+  formatPostureThresholdSweep,
+  sweepPostureThresholds,
+} from "../../evaluation/posture-threshold-sweep";
 import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
 import { analyzeDevelopmentSession } from "../../evaluation/development-analysis";
 import {
@@ -35,6 +40,7 @@ import {
   BackgroundMotionTracker,
   describeMovementContext,
 } from "../background-motion-tracker";
+import { SessionAudioNotifier } from "../session-audio";
 import type {
   CameraProfile,
   CameraRawFeature,
@@ -116,6 +122,14 @@ async function main() {
   cameraSessionButton.textContent = "Development_Camera_Session";
   cameraSessionButton.disabled = true;
   const downloadButton = document.createElement("button");
+  const thresholdSweepButton = document.createElement("button");
+  thresholdSweepButton.textContent = "Threshold sweep (JSONL)";
+  const thresholdFileInput = document.createElement("input");
+  thresholdFileInput.type = "file";
+  thresholdFileInput.accept = ".jsonl,.ndjson,.txt,application/jsonl";
+  thresholdFileInput.hidden = true;
+  const thresholdSweepOutput = document.createElement("pre");
+  thresholdSweepOutput.className = "threshold-sweep-output";
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
   const scenarioSelect = document.createElement("select");
@@ -158,6 +172,8 @@ async function main() {
     automatedSessionButton,
     cameraSessionButton,
     downloadButton,
+    thresholdSweepButton,
+    thresholdFileInput,
     scenarioSelect,
     scenarioStartedButton,
     driftOnsetButton,
@@ -170,7 +186,7 @@ async function main() {
   sessionInstruction.className = "session-instruction";
   sessionInstruction.textContent = "자동 Development Session을 시작하면 안내가 표시됩니다.";
 
-  sidePanel.append(controls, sessionInstruction, status);
+  sidePanel.append(controls, sessionInstruction, status, thresholdSweepOutput);
   layout.append(canvas, sidePanel);
   app.append(video, layout, alertBannerRow);
   addLayoutStyles();
@@ -180,6 +196,7 @@ async function main() {
 
   const backgroundMotionTracker = new BackgroundMotionTracker();
   const movementClassifier = new MovementClassifier();
+  const sessionAudio = new SessionAudioNotifier();
 
   status.textContent = "requesting camera permission...";
   await startWebcam(video);
@@ -362,6 +379,7 @@ async function main() {
   function beginRecording(sessionType: SessionType = "POSTURE"): void {
     if (recorder.isRecording()) return;
 
+    void sessionAudio.unlock();
     currentSessionType = sessionType;
     recorder.start(
       profile && cameraProfile && profileCreatedAt !== null
@@ -441,6 +459,7 @@ async function main() {
   function endScenario(): void {
     if (!recorder.isRecording() || !scenarioActive) return;
 
+    const completedScenario = selectedScenario;
     const timestamp = performance.now();
     scenarioLabeler.setLabel(timestamp, "NORMAL_WORK");
     recorder.mark({
@@ -450,6 +469,9 @@ async function main() {
     });
     scenarioActive = false;
     driftOnsetButton.disabled = true;
+    if (isDriftScenario(completedScenario) || completedScenario === "TRANSIENT_ACTION") {
+      sessionAudio.notifyReturnToNormal();
+    }
   }
 
   function setManualControlsDisabled(disabled: boolean): void {
@@ -531,6 +553,30 @@ async function main() {
     link.download = `session-${Date.now()}.jsonl`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  thresholdSweepButton.onclick = () => thresholdFileInput.click();
+  thresholdFileInput.onchange = async () => {
+    const file = thresholdFileInput.files?.[0];
+    if (!file) return;
+
+    thresholdSweepOutput.textContent = "threshold sweep running...";
+    try {
+      const entries = parseJSONL(await file.text());
+      const report = sweepPostureThresholds(entries);
+      thresholdSweepOutput.textContent = [
+        `file: ${file.name}`,
+        `candidates: ${report.candidates.length}`,
+        formatPostureThresholdSweep(report),
+        "",
+        ...report.notes,
+      ].join("\n");
+      console.info("Posture threshold sweep", report);
+    } catch (error) {
+      thresholdSweepOutput.textContent = `threshold sweep failed: ${String(error)}`;
+    } finally {
+      thresholdFileInput.value = "";
+    }
   };
 
   function setAlertBanner(
@@ -839,6 +885,19 @@ function addLayoutStyles(): void {
       color: #1e3a8a;
       font-weight: 600;
       line-height: 1.5;
+    }
+
+    .threshold-sweep-output {
+      box-sizing: border-box;
+      width: 100%;
+      max-height: 360px;
+      margin: 12px 0 0;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre;
+      font: 11px/1.45 monospace;
+      background: #111827;
+      color: #e5e7eb;
     }
 
     @media (max-width: 900px) {
