@@ -21,6 +21,15 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // different posture (HEAD_DOWN below), not this one.
     required: [
       { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
+      // Re-added with a wider threshold than the earlier attempt (removed
+      // above): live testing confirmed moving substantially closer to the
+      // camera (no real posture change) scores bodyScale ~3.14, while
+      // genuine forward-head captures collected so far stayed under ~1.5
+      // (one outlier at 1.35) since craning the head forward only brings a
+      // *little* of the torso along with it. 2 sits in that gap — loose
+      // enough not to repeat the old "blocked genuine detections" failure,
+      // tight enough to exclude a real whole-body camera-distance change.
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -83,7 +92,25 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // NORMAL_WORK/SETTLING forwardLeanProxy averages 0.36-0.51, so 0.5 was
     // firing on ordinary noise. Real FORWARD_LEAN in the same session
     // averaged 4.17, so 2 keeps a safe margin on both sides.
-    required: [{ feature: "forwardLeanProxy", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+    //
+    // Lowered again 2 -> 1.2: a live, deliberately deep lean (post-
+    // recalibration) only scored 1.44 — this calibration's MAD landed
+    // higher than the jsonl session's did (same instability seen
+    // repeatedly with other rules this session), so 2 was too strict for
+    // this MAD basis. 1.2 clears it with margin while staying well above
+    // the jsonl session's ~0.5 NORMAL_WORK ceiling.
+    // bodyScale GT added: the user's physical distinction from FORWARD_HEAD
+    // — leaning the whole torso forward brings the shoulders closer too
+    // (bodyScale rises), while a pure turtle neck leaves shoulder distance
+    // roughly unchanged (bodyScale flat/negative) and only the face grows.
+    // Without this, a genuine FORWARD_HEAD case (bodyScale -0.10) lost to
+    // FORWARD_LEAN's undiscounted priority whenever pitchProxy was also
+    // elevated — confirmed live. Real FORWARD_LEAN captures so far scored
+    // bodyScale 0.87/1.52, so 0.3 sits safely below both.
+    required: [
+      { feature: "forwardLeanProxy", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
+      { feature: "bodyScale", operator: "GT", threshold: 0.3, reference: "CALIBRATION" },
+    ],
     supporting: ["bodyCompressionRatio", "headYRatio"],
     reason: "upper body is leaning forward",
   },
