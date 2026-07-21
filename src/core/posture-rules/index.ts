@@ -127,11 +127,11 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // shoulderWidthRatio requirement excludes pure head reorientation), so
     // the exclusion isn't needed for that either.
     required: [
-      { feature: "headXRatio", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
+      { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
     ],
     anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+      { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
     ],
     supporting: ["headXRatio", "yawProxy", "headRoll"],
     reason: "head direction differs from the calibrated direction",
@@ -155,7 +155,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     postureType: "SHOULDER_ASYMMETRY",
     requiredLandmarks: CORE,
     required: [
-      { feature: "shoulderTilt", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "shoulderTilt", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderAsymmetry"],
     reason: "shoulder heights are asymmetric",
@@ -236,7 +236,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     postureType: "TORSO_TWIST",
     requiredLandmarks: CORE,
     required: [
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.25, reference: "CALIBRATION" },
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>오늘 병렬 개발 분업안</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 1600px;
+      min-height: 1100px;
+      padding: 28px;
+      color: #172033;
+      background: #f7f9fc;
+      font-family: "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+    }
+    h1 { margin: 0 0 20px; font-size: 34px; text-align: center; letter-spacing: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: 190px 300px 1fr 260px;
+      gap: 10px;
+    }
+    .cell {
+      border: 1px solid #bcc9dc;
+      border-radius: 8px;
+      padding: 18px;
+      background: #fff;
+      line-height: 1.55;
+      font-size: 18px;
+    }
+    .header {
+      min-height: 68px;
+      color: #fff;
+      background: #17243b;
+      border-color: #17243b;
+      font-weight: 700;
+      font-size: 22px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .owner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-weight: 800;
+      font-size: 25px;
+    }
+    .owner small { margin-top: 8px; font-size: 16px; font-weight: 600; }
+    .goals { font-weight: 650; }
+    ul { margin: 0; padding-left: 22px; }
+    li { margin: 6px 0; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      align-items: stretch;
+      gap: 26px;
+      padding: 14px;
+    }
+    .step {
+      position: relative;
+      min-height: 126px;
+      padding: 14px 12px;
+      border: 1px solid currentColor;
+      border-radius: 8px;
+      background: rgba(255,255,255,.6);
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 650;
+      line-height: 1.5;
+    }
+    .step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -24px;
+      top: 45%;
+      font-size: 25px;
+      color: #536174;
+    }
+    .joint { background: #edf4ff; border-color: #76a8e8; }
+    .a { background: #edf9f1; border-color: #79bc8d; }
+    .b { background: #fff7e8; border-color: #e4ad4f; }
+    .c { background: #f4effc; border-color: #a78bd5; }
+    .integration { background: #eaf8fa; border-color: #5ba8b0; }
+    .joint .step { color: #2c6eb7; }
+    .a .step { color: #2c7b49; }
+    .b .step { color: #98641e; }
+    .c .step { color: #6848a0; }
+    .integration .step { color: #286f76; }
+    .outputs li::marker { color: #2b8a57; }
+    .bottom {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 1.3fr;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .panel {
+      border: 1px solid #bcc9dc;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+    .panel h2 {
+      margin: 0;
+      padding: 12px;
+      color: #fff;
+      background: #1b2b47;
+      font-size: 20px;
+      text-align: center;
+      letter-spacing: 0;
+    }
+    .panel div { padding: 16px 20px; font-size: 17px; line-height: 1.55; }
+    .flow { text-align: center; font-weight: 700; }
+    .arrow { color: #4f6f94; padding: 0 5px; }
+    .footer {
+      margin-top: 16px;
+      padding: 13px;
+      border: 1px solid #e2a4a4;
+      border-radius: 8px;
+      color: #9b3434;
+      background: #fff4f4;
+      font-size: 17px;
+      font-weight: 700;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>오늘 병렬 개발 분업안</h1>
+  <main class="grid">
+    <div class="cell header">담당</div>
+    <div class="cell header">핵심 목표</div>
+    <div class="cell header">주요 작업 (세부 단계)</div>
+    <div class="cell header">오늘 산출물</div>
+
+    <div class="cell owner joint">공동<small>작업 시작 전</small></div>
+    <div class="cell goals joint"><ul><li>공통 데이터 계약 확정</li><li>파일 소유권 분리</li><li>Mock 입력 준비</li></ul></div>
+    <div class="cell steps joint">
+      <div class="step">1. FrameFeature<br>필드·단위 확정</div>
+      <div class="step">2. PostureRule<br>입출력 계약 확정</div>
+      <div class="step">3. DetectionEvent<br>결과 형식 확정</div>
+      <div class="step">4. Mock Frame·JSONL<br>공유</div>
+    </div>
+    <div class="cell outputs joint"><ul><li>동결된 공통 타입</li><li>공용 Mock 데이터</li><li>담당 경로 확정</li></ul></div>
+
+    <div class="cell owner a">A 파트<small>Landmark·Feature</small></div>
+    <div class="cell goals a"><ul><li>실제 Feature 완성</li><li>자세·환경 값 분리</li><li>신뢰도 처리</li></ul></div>
+    <div class="cell steps a">
+      <div class="step">1. Landmark<br>신뢰도·누락 검사</div>
+      <div class="step">2. 자세 Feature<br>계산·방향 통일</div>
+      <div class="step">3. 환경 Feature<br>translation·scale</div>
+      <div class="step">4. 누락 Feature<br>구현·테스트</div>
+    </div>
+    <div class="cell outputs a"><ul><li>완성된 FrameFeature</li><li>Feature 로그</li><li>단위 테스트</li></ul></div>
+
+    <div class="cell owner b">B 파트<small>Profile·Rule</small></div>
+    <div class="cell goals b"><ul><li>Calibration·MAD 완성</li><li>자세 Rule 판정</li><li>V0/V2 공통 엔진</li></ul></div>
+    <div class="cell steps b">
+      <div class="step">1. Calibration<br>median 생성</div>
+      <div class="step">2. 공통 MAD<br>min·max·updater</div>
+      <div class="step">3. 자세별 Rule<br>조건·이유 정의</div>
+      <div class="step">4. Detector·저장<br>CameraAssessment</div>
+    </div>
+    <div class="cell outputs b"><ul><li>자세명·Feature·이유</li><li>V0/V2 판정 API</li><li>저장 가능한 Profile</li></ul></div>
+
+    <div class="cell owner c">C 파트<small>시간·평가·최적화</small></div>
+    <div class="cell goals c"><ul><li>시간 상태 처리</li><li>V0/V2 Replay 비교</li><li>자세 일치율 개선</li></ul></div>
+    <div class="cell steps c">
+      <div class="step">1. State Machine<br>이동·복귀·Alert</div>
+      <div class="step">2. JSONL Replay<br>V0/V2 비교</div>
+      <div class="step">3. Threshold Sweep<br>지표 계산</div>
+      <div class="step">4. Confusion 분석<br>추천값 출력</div>
+    </div>
+    <div class="cell outputs c"><ul><li>Replay 결과표</li><li>자세별 일치율</li><li>Threshold 추천표</li></ul></div>
+
+    <div class="cell owner integration">통합<small>오늘 종료 전</small></div>
+    <div class="cell goals integration"><ul><li>실제 카메라 연결</li><li>Development Session</li><li>추천값 최종 반영</li></ul></div>
+    <div class="cell steps integration">
+      <div class="step">1. A Feature를<br>B Detector에 연결</div>
+      <div class="step">2. C State·Logger<br>연결</div>
+      <div class="step">3. Posture Session<br>로그 수집</div>
+      <div class="step">4. C 추천 → B 반영<br>재검증</div>
+    </div>
+    <div class="cell outputs integration"><ul><li>실시간 V0/V2</li><li>분석 가능한 JSONL</li><li>다음 날 배포 기반</li></ul></div>
+  </main>
+
+  <section class="bottom">
+    <article class="panel"><h2>병렬 개발 원칙</h2><div>A는 실제 Feature, B는 Mock 기반 판정, C는 Mock JSONL 기반 평가를 동시에 개발한다.</div></article>
+    <article class="panel"><h2>Threshold 반영</h2><div class="flow">C 분석·추천 <span class="arrow">→</span> B Rule 반영 <span class="arrow">→</span> 공동 재검증</div></article>
+    <article class="panel"><h2>오늘 완료 기준</h2><div>실시간 Feature → V0/V2 판정 → JSONL 저장 → Replay → 자세별 일치율과 추천 threshold 출력</div></article>
+  </section>
+  <div class="footer">공통 타입 변경은 세 명이 합의한 경우에만 진행하고, 각 담당자는 소유 경로 밖의 파일을 직접 수정하지 않는다.</div>
+</body>
+</html>
