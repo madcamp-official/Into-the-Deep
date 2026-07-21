@@ -741,6 +741,13 @@ async function main() {
 
       if (v2Event?.alert) {
         setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(v2Event)}`);
+      } else if (v2Event?.state === "MOVING") {
+        // Motion-energy hold: v2's judgment is deliberately paused while
+        // sustained movement is detected (see posture-rule-detector's
+        // motionEnergyGate), not a "you're fine" result — showing it as
+        // "정상" here would misreport a held-but-unevaluated frame as a
+        // confirmed normal posture.
+        setAlertBanner(v2AlertBanner, "unknown", "V2: 판단 보류 중 (움직임 감지)");
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
