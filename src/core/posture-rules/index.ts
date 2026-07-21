@@ -73,7 +73,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // torso moves away) — using that directly instead of the combined
     // proxy keeps this independent of pure head-angle changes.
     required: [
-      { feature: "faceToShoulderRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "LT", threshold: -2.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
     reason: "upper body is leaning backward",
@@ -85,12 +85,12 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // camera is slightly off-axis. A head tilt can also move the nose between
     // the ears, so require horizontal displacement and exclude a tilted head.
     required: [
-      { feature: "headXRatio", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
+      { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
       { feature: "headRoll", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" },
     ],
     anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
+      { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+      { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
     ],
     supporting: ["headXRatio", "yawProxy"],
     reason: "head direction differs from the calibrated direction",
@@ -99,10 +99,9 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
-    // Lowered from 2 -> 1.2, same reasoning as FORWARD_HEAD: wanted a
-    // moderate tilt to register, not just a pronounced one. Candidate
-    // value, not yet tuned against a development session.
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 1.2, reference: "CALIBRATION" }],
+    // The posture session showed that 1.2 is inside the normal-work noise
+    // range. Keep a moderate margin until more sessions are available.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
@@ -110,7 +109,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     postureType: "SHOULDER_ASYMMETRY",
     requiredLandmarks: CORE,
     required: [
-      { feature: "shoulderTilt", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "shoulderTilt", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderAsymmetry"],
     reason: "shoulder heights are asymmetric",
@@ -184,7 +183,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     postureType: "TORSO_TWIST",
     requiredLandmarks: CORE,
     required: [
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.25, reference: "CALIBRATION" },
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],

@@ -1,0 +1,51 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Malgun Gothic, Noto Sans KR, Arial","primaryTextColor":"#172033","lineColor":"#536174","clusterBkg":"#f8fafc","clusterBorder":"#9aacbf"},"flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":48}}}%%
+flowchart TD
+    START["공동 계약 확정<br/>FrameFeature · PostureRule · DetectionEvent"]
+    MOCK["공통 Mock Frame · JSONL 공유"]
+    START --> MOCK
+
+    subgraph PARALLEL["병렬 개발"]
+      direction LR
+      subgraph A["A · Landmark와 Feature"]
+        A1["Landmark 신뢰도"] --> A2["자세 Feature"]
+        A2 --> A3["환경·누락 Feature"]
+        A3 --> A4["실제 FrameFeature"]
+      end
+
+      subgraph B["B · Profile과 Rule"]
+        B1["Calibration median"] --> B2["공통 MAD·Updater"]
+        B2 --> B3["PostureRule·Detector"]
+        B3 --> B4["V0/V2 판정 API"]
+      end
+
+      subgraph C["C · 시간·평가·최적화"]
+        C1["Temporal State"] --> C2["JSONL Replay"]
+        C2 --> C3["Threshold Sweep"]
+        C3 --> C4["일치율·혼동 분석"]
+      end
+    end
+
+    MOCK --> A1
+    MOCK --> B1
+    MOCK --> C1
+
+    A4 --> INTEGRATE["실제 코드 통합"]
+    B4 --> INTEGRATE
+    C1 --> INTEGRATE
+    INTEGRATE --> SESSION["Development Posture Session"]
+    SESSION --> C2
+    C4 --> RECOMMEND["C · Threshold와 판단 로직 추천"]
+    RECOMMEND --> APPLY["B · 최종 Rule 반영"]
+    APPLY --> VERIFY["공동 재측정·Replay 검증"]
+    VERIFY --> OUTPUT["오늘 산출물<br/>실시간 V0/V2 · JSONL · 비교 지표 · 추천값"]
+
+    classDef common fill:#e8f1ff,stroke:#5c92d1,color:#16365f,stroke-width:2px;
+    classDef a fill:#eaf7ee,stroke:#58a16c,color:#245b35,stroke-width:2px;
+    classDef b fill:#fff4df,stroke:#d49b3c,color:#734b12,stroke-width:2px;
+    classDef c fill:#f2ebfb,stroke:#9473c5,color:#503581,stroke-width:2px;
+    classDef integration fill:#e5f6f7,stroke:#4899a1,color:#225e64,stroke-width:2px;
+    class START,MOCK common;
+    class A1,A2,A3,A4 a;
+    class B1,B2,B3,B4,APPLY b;
+    class C1,C2,C3,C4,RECOMMEND c;
+    class INTEGRATE,SESSION,VERIFY,OUTPUT integration;

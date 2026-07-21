@@ -76,7 +76,7 @@ describe("PostureRuleDetector", () => {
   it("requires both yaw and horizontal head displacement for a head turn", () => {
     const profile = createPostureProfile();
     const matches = evaluatePostureRules(
-      createPostureFrame({ yawProxy: 0.22, headXRatio: 0.12, headRoll: 0 }),
+      createPostureFrame({ yawProxy: 0.3, headXRatio: 0.15, headRoll: 0 }),
       profile,
       createInitialMADProfile(),
       DEFAULT_POSTURE_RULES,
