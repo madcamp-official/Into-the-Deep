@@ -776,7 +776,14 @@ async function main() {
     const magnitude = cameraScenarioMagnitude(scenario.label, assessment.transform);
     if (session.phase === "RETURN") {
       if (!verificationActive && assessment.state === "VALID" && magnitude < 0.025) {
-        if (session.scenarioIndex + 1 >= CAMERA_BOUNDARY_SCENARIOS.length) {
+        if (scenarioActive) {
+          session.phase = "MOVE";
+          session.measured = false;
+          session.changeMarked = false;
+          session.stableSince = null;
+          sessionInstruction.textContent =
+            "기준 위치를 확인했습니다. 안내에 따라 방금보다 조금 덜 이동하세요.";
+        } else if (session.scenarioIndex + 1 >= CAMERA_BOUNDARY_SCENARIOS.length) {
           sessionInstruction.textContent = "모든 카메라 변화 시나리오를 완료했습니다. 세션을 종료합니다.";
           finishRecording();
         } else {
@@ -790,6 +797,15 @@ async function main() {
     }
 
     if (session.phase !== "MOVE" || session.measured || verificationActive) return;
+    if (!session.changeMarked) {
+      session.stableSince = null;
+      sessionInstruction.textContent = [
+        `${scenario.name} 시나리오입니다.`,
+        scenario.instruction,
+        "조금 움직이세요. 실제 움직임이 감지되면 측정을 시작합니다.",
+      ].join("\n");
+      return;
+    }
     if (session.stableSince === null) {
       session.stableSince = timestamp;
       sessionInstruction.textContent =
@@ -835,7 +851,8 @@ async function main() {
 
     session.phase = postureAlert ? "RETURN" : "MOVE";
     session.measured = false;
-    session.stableSince = timestamp;
+    session.stableSince = null;
+    if (!postureAlert) session.changeMarked = false;
     sessionInstruction.textContent = postureAlert
       ? "보정 후에도 잘못된 자세로 판정되었습니다. 기준 위치로 돌아간 뒤 방금보다 조금 덜 이동하세요."
       : "보정 후 정상 자세로 돌아왔습니다. 같은 방향으로 조금 더 이동하세요.";
@@ -1100,6 +1117,10 @@ async function main() {
       motionPhase: currentMotionPhase,
       episodeFrameCount: liveCameraAssessment.episodeFrameCount,
       episodeUnknownFrameCount: liveCameraAssessment.episodeUnknownFrameCount,
+      // The calibration baseline assessment intentionally has no transform.
+      // Keep the current live transform available for the boundary session
+      // and status panel while retaining the baseline state judgment.
+      transform: selectedAssessment.transform ?? cameraTransform ?? undefined,
     };
 
     // Only an explicitly classified ADJUSTED camera state is safe to correct.

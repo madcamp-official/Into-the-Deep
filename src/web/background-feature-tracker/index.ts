@@ -200,10 +200,17 @@ export class BackgroundFeatureTracker {
 
 function createPoints(width: number, height: number): Point[] {
   const points: Point[] = [];
-  for (const y of [0.12, 0.28, 0.72, 0.88]) {
-    // Keep tracking away from the torso and face. Those central pixels can
-    // move when the user adjusts posture even while the camera is stationary.
-    for (const x of [0.2, 0.8]) {
+  // Use a 16-point perimeter grid. The inner image is deliberately avoided:
+  // it commonly contains the user's face/torso, while the perimeter is more
+  // likely to contain fixed background structure. Extra points let a few
+  // patches disappear without making the affine estimate immediately weak.
+  for (const y of [0.12, 0.88]) {
+    for (const x of [0.1, 0.3, 0.7, 0.9]) {
+      points.push({ x: width * x, y: height * y });
+    }
+  }
+  for (const x of [0.1, 0.9]) {
+    for (const y of [0.28, 0.5, 0.72, 0.82]) {
       points.push({ x: width * x, y: height * y });
     }
   }
