@@ -285,6 +285,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
     reason: "torso direction differs from the calibrated forward direction",
+    // A torso twist projects the shoulders narrower in 2D, which inflates
+    // faceToShoulderRatio the same way it does for FORWARD_HEAD — already
+    // documented from session-1784560098508.jsonl replay (SHOULDERS_ONLY_TWIST
+    // averaged faceToShoulderRatio 7.37) and reconfirmed live just now
+    // (5.01), both far past FORWARD_HEAD's own reference (~2.52). Even with
+    // both of this rule's own conditions clearing their thresholds, its
+    // evidence score (~1.10) still lost to FORWARD_HEAD's (~1.87) despite
+    // that rule's 0.4 priority discount, so this needs a larger boost than
+    // BACKWARD_LEAN's 1.3 did.
+    priority: 2.0,
   },
   {
     postureType: "SHOULDERS_ONLY_TWIST",
