@@ -1,0 +1,30 @@
+/* Minimal stylesheet for the Electron overlay window: just the CSS custom
+   properties fairy-widget.css needs, plus a transparent page background so
+   the transparent/frameless BrowserWindow shows the desktop underneath
+   instead of an opaque page. Deliberately doesn't pull in product-style.css
+   — that file styles the full product.html page (camera stage, status
+   pill, etc.) with an opaque dark background, none of which exists here. */
+@import "../ui/fairy-widget.css";
+
+:root {
+  --panel: #171b21;
+  --panel-border: #262b33;
+  --text-dim: #9aa3b2;
+  --accent: #7dd6a8;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family:
+    "Pretendard",
+    -apple-system,
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    system-ui,
+    sans-serif;
+  color: #eef1f5;
+}
