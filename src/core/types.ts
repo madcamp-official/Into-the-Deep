@@ -174,6 +174,36 @@ export interface CameraDelta {
   correctedYaw: number;
 }
 
+export interface CameraTransformSnapshot {
+  translationX: number;
+  translationY: number;
+  scale: number;
+  roll: number;
+  yawProxy?: number;
+  pitchProxy?: number;
+  trackedPointCount: number;
+  inlierRatio: number;
+  reprojectionError: number;
+  confidence: number;
+  /** Pixel-space affine map from calibration/reference view to current view. */
+  affine?: AffineTransform;
+}
+
+export interface AffineTransform {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+
+export interface CameraTransform extends CameraTransformSnapshot {
+  timestamp: number;
+  source: "BACKGROUND_FEATURES";
+  keyframeTransform?: CameraTransformSnapshot;
+}
+
 export interface CameraAssessment {
   timestamp: number;
   state: CameraState;
@@ -183,6 +213,10 @@ export interface CameraAssessment {
   reliability: number;
   reason?: string[];
   backgroundTransformConfidence?: number;
+  transform?: CameraTransform;
+  motionPhase?: "STABLE" | "MOVING" | "SETTLING";
+  episodeFrameCount?: number;
+  episodeUnknownFrameCount?: number;
 }
 
 export interface UserProfile {
@@ -288,6 +322,15 @@ export interface ScenarioLabel {
     | "HEAD_TURN"
     | "CLOSE_TO_CAMERA"
     | "CAMERA_CHANGE"
+    | "CAMERA_TRANSLATION_X"
+    | "CAMERA_TRANSLATION_Y"
+    | "CAMERA_ROLL"
+    | "CAMERA_YAW_LEFT"
+    | "CAMERA_YAW_RIGHT"
+    | "CAMERA_PITCH_UP"
+    | "CAMERA_PITCH_DOWN"
+    | "CAMERA_SCALE"
+    | "CAMERA_RETURN"
     | "HEAD_TILT"
     | "CHIN_REST"
     | "HEAD_BACK"

@@ -1,5 +1,5 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
-import type { FrameFeature } from "../types";
+import type { CameraTransform, FrameFeature } from "../types";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
 import { HAND_LANDMARK_INDEX } from "../../web/camera-adapter/hand-landmarker";
 import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
@@ -33,6 +33,79 @@ const ONE_EURO_BETA = 0.05;
 // teleport between two 33ms-apart frames. Candidate value; not yet tuned
 // against a real development session.
 const JUMP_ENERGY_THRESHOLD = 25;
+
+/**
+ * Maps pose landmarks from the current camera view back toward the stored
+ * calibration view. The background tracker currently exposes a similarity
+ * transform, so this corrects translation, scale, and roll. Perspective
+ * changes represented only by yaw/pitch remain assessment signals until the
+ * tracker exposes a full projective transform.
+ */
+export function applyCameraCorrectionToLandmarks(
+  landmarks: NormalizedLandmark[],
+  transform: CameraTransform,
+): NormalizedLandmark[] {
+  if (transform.affine) {
+    const corrected = applyAffineCorrection(landmarks, transform.affine);
+    if (corrected) return corrected;
+  }
+
+  const scale = 1 + transform.scale;
+  if (!Number.isFinite(scale) || scale <= 0) return landmarks;
+
+  const cos = Math.cos(transform.roll);
+  const sin = Math.sin(transform.roll);
+  const centerX = 0.5;
+  const centerY = 0.5;
+
+  return landmarks.map((landmark) => {
+    const shiftedX = landmark.x - centerX - transform.translationX;
+    const shiftedY = landmark.y - centerY - transform.translationY;
+    const correctedX = centerX + (cos * shiftedX + sin * shiftedY) / scale;
+    const correctedY = centerY + (-sin * shiftedX + cos * shiftedY) / scale;
+
+    return {
+      ...landmark,
+      x: clamp01(correctedX),
+      y: clamp01(correctedY),
+    };
+  });
+}
+
+// The tracker estimates affine coefficients in its 320x180 background
+// canvas. Applying the inverse matrix in that same coordinate system keeps
+// translation, anisotropic scale, shear, and roll together instead of
+// approximating them with separate normalized values.
+function applyAffineCorrection(
+  landmarks: NormalizedLandmark[],
+  affine: NonNullable<CameraTransform["affine"]>,
+): NormalizedLandmark[] | null {
+  const determinant = affine.a * affine.e - affine.b * affine.d;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-6) return null;
+
+  const width = 320;
+  const height = 180;
+  return landmarks.map((landmark) => {
+    const currentX = landmark.x * width;
+    const currentY = landmark.y * height;
+    const translatedX = currentX - affine.c;
+    const translatedY = currentY - affine.f;
+    const referenceX = (affine.e * translatedX - affine.b * translatedY) / determinant;
+    const referenceY = (-affine.d * translatedX + affine.a * translatedY) / determinant;
+    return {
+      ...landmark,
+      x: clamp01(referenceX / width),
+      y: clamp01(referenceY / height),
+    };
+  });
+}
+
+export function applyCameraCorrectionToHandLandmarks(
+  hands: NormalizedLandmark[][],
+  transform: CameraTransform,
+): NormalizedLandmark[][] {
+  return hands.map((hand) => applyCameraCorrectionToLandmarks(hand, transform));
+}
 
 // FrameFeature calculation described in plan.md section 8. Coordinates are
 // normalized to shoulder-center origin / shoulder-width scale rather than
@@ -394,4 +467,8 @@ function oneEuroSmooth(current: number, previous: number | undefined, dt: number
 
 function isVisible(point: NormalizedLandmark | undefined, minConfidence: number): boolean {
   return point !== undefined && point.visibility >= minConfidence;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
