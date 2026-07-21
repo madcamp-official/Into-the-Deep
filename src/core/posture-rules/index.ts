@@ -326,6 +326,19 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     required: [
       { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.25, reference: "CALIBRATION" },
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      // shoulderCenterY ABS_LT added: a *deep* BACKWARD_LEAN (well past the
+      // shallow leans BACKWARD_LEAN's own priority fix above was tuned
+      // against) also drives correctedYaw past this rule's threshold — live
+      // captures showed correctedYaw 3.70-4.22 (no priority trick saves
+      // BACKWARD_LEAN here either, since its own faceToShoulderRatio
+      // condition failed outright at this lean depth, score only -0.13).
+      // The clean discriminator: reclining moves the torso's vertical
+      // screen position a lot (shoulderCenterY score 3.55-3.60 in that same
+      // deep-lean capture), while three genuine live torso-twist captures
+      // (rotating shoulders in place, no lean) scored -0.62/-0.03/0.16 —
+      // barely moved. 2 sits well above the twist noise ceiling and well
+      // below the lean-contamination floor.
+      { feature: "shoulderCenterY", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
     reason: "torso direction differs from the calibrated forward direction",
