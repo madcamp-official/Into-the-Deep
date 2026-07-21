@@ -30,9 +30,6 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
 // ROUNDED_SHOULDERS/CHIN_TUCK/SHOULDERS_ONLY_TWIST (rules deleted — the
 // latter two were dead code, their required feature was never computed).
 // Added HEAD_DOWN, which has an active rule but wasn't in the script before.
-// HEAD_TURN's own steps below are commented out (not removed) — its rule
-// is temporarily disabled in posture-rules/index.ts, decided to drop it
-// for now rather than delete it.
 //
 // Gap between scenarios widened 5s -> 10s and hold widened 8s -> 10s: a
 // replay of a real recording with the 5s/8s version showed a suspiciously
@@ -56,10 +53,9 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 89, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
   { atSeconds: 92, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
   { atSeconds: 102, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  // HEAD_TURN disabled for now (decided to drop it, not delete it):
-  // { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
-  // { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
-  // { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
+  { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
+  { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
+  { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
   { atSeconds: 135, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
   { atSeconds: 138, action: "DRIFT_ONSET", label: "HEAD_TILT" },
   { atSeconds: 148, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
