@@ -26,8 +26,16 @@
 // opening the laptop and being immediately ready to calibrate.
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, session } = require("electron");
 const path = require("node:path");
+const { autoUpdater } = require("electron-updater");
 
 const devServerUrl = app.isPackaged ? null : getDevServerUrlFromArgs();
+
+// Tray-driven app that mostly never fully quits on its own (launches at
+// login, only exits via the tray's "종료"), so a single check on startup
+// isn't enough to catch a release published mid-session — recheck on this
+// interval too. 4h keeps it well under GitHub's unauthenticated rate limits
+// while still landing new releases the same day they ship.
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 let detectorWindow = null;
 let overlayWindow = null;
@@ -168,6 +176,33 @@ function createTrayIcon() {
   return nativeImage.createFromBuffer(buffer, { width: size, height: size });
 }
 
+// Downloads silently in the background and applies itself the next time
+// the app actually quits (autoInstallOnAppQuit, on by default) — tray's
+// "종료" or a machine restart — never quitAndInstall() on the spot, which
+// would yank the app out from under whatever the user is doing right now.
+// Packaged only: dev builds have no update feed (no dev-app-update.yml),
+// and checkForUpdates() would just throw.
+//
+// macOS builds are unsigned (no paid Apple Developer certificate in this
+// repo — see the CI workflow's CSC_IDENTITY_AUTO_DISCOVERY note), so
+// Squirrel.Mac's signature check will likely reject these updates even
+// though they're offered. Windows NSIS updates don't have this restriction
+// and are expected to work end-to-end.
+function setupAutoUpdates() {
+  autoUpdater.on("error", (error) => {
+    console.error("auto-update check failed", error);
+  });
+
+  const check = () => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error("auto-update check failed", error);
+    });
+  };
+
+  check();
+  setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+}
+
 function createTray() {
   tray = new Tray(createTrayIcon());
   tray.setToolTip("요정 — 바른 자세 코치");
@@ -196,6 +231,7 @@ app.whenReady().then(() => {
     // Electron dev binary happened to run this, not something worth
     // auto-starting.
     app.setLoginItemSettings({ openAtLogin: true });
+    setupAutoUpdates();
   }
 
   createDetectorWindow();

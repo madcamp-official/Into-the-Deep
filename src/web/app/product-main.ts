@@ -1,7 +1,10 @@
 import { startWebcam } from "../camera-adapter/webcam";
 import {
+  anchorFromLandmarks,
   createPoseLandmarker,
   detectPoseForVideoFrame,
+  selectPrimaryLandmarks,
+  type PersonAnchor,
 } from "../camera-adapter/pose-landmarker";
 import {
   createHandLandmarker,
@@ -20,7 +23,12 @@ import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import { SessionAudioNotifier } from "../session-audio";
 import { CalibrationFlow } from "../ui/calibration-flow";
 import { FairyWidget } from "../ui/fairy-widget";
-import { describePostureDetail, describePostureLabel } from "../ui/posture-copy";
+import {
+  describePostureDetail,
+  describePostureLabel,
+  describePresenceDetail,
+  describePresenceLabel,
+} from "../ui/posture-copy";
 import type {
   CameraProfile,
   CameraRawFeature,
@@ -159,6 +167,11 @@ async function main() {
   let madProfile = createInitialMADProfile();
   let detector: PostureRuleDetector | null = null;
   let madUpdater = new V2MadUpdater(madProfile);
+  // Where the calibrated user's shoulders were last seen — re-seeded from
+  // the camera profile's calibration median below, so tracking starts
+  // correct from loop()'s very first frame instead of trusting whichever
+  // pose happens to rank first that frame.
+  let trackedAnchor: PersonAnchor | null = null;
 
   function activateProfile(
     nextProfile: UserProfile,
@@ -169,6 +182,7 @@ async function main() {
     madProfile = createInitialMADProfile({ now: Date.now() });
     detector = new PostureRuleDetector(profile, madProfile);
     madUpdater = new V2MadUpdater(madProfile);
+    trackedAnchor = { x: nextCameraProfile.shoulderCenterX, y: nextCameraProfile.shoulderCenterY };
   }
 
   // ---- calibration ----------------------------------------------------
@@ -185,14 +199,19 @@ async function main() {
     const cameraFrames: CameraRawFeature[] = [];
     const deadline = performance.now() + CALIBRATION_DURATION_MS;
     let previousFeature: FrameFeature | null = null;
+    // Locks onto one body for the whole calibration window (see
+    // selectPrimaryLandmarks) so someone walking through the background
+    // mid-calibration can't contaminate the baseline.
+    let calibrationAnchor: PersonAnchor | null = null;
 
     const tick = () => {
       const timestamp = performance.now();
       const result = detectPoseForVideoFrame(landmarker, video, timestamp);
-      const landmarks = result.landmarks[0];
+      const landmarks = selectPrimaryLandmarks(result, calibrationAnchor);
       const quality = assessLandmarkQuality(landmarks, timestamp);
 
       if (quality.reliable && landmarks) {
+        calibrationAnchor = anchorFromLandmarks(landmarks) ?? calibrationAnchor;
         const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
         const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);
         previousFeature = feature;
@@ -261,6 +280,12 @@ async function main() {
   let fairyLastShownAt = 0;
   let fairyShowing = false;
   let loopStarted = false;
+  // Separate from the posture-alert cooldown above: fires the fairy for
+  // "no person in frame at all" instead of a bad-posture nudge. The two
+  // are mutually exclusive per frame (this only ever runs while landmarks
+  // aren't reliable), so they can't fight over the same fairy instance.
+  let noPersonSince: number | null = null;
+  let noPersonFairyLastShownAt = 0;
 
   // ---- decide calibration vs. resume on load -------------------------
   try {
@@ -279,6 +304,7 @@ async function main() {
 
   settingsBtn.onclick = () => {
     detector = null;
+    trackedAnchor = null;
     runCalibration();
   };
 
@@ -291,7 +317,7 @@ async function main() {
   function loop(): void {
     const timestamp = performance.now();
     const result = detectPoseForVideoFrame(landmarker, video, timestamp);
-    const landmarks = result.landmarks[0];
+    const landmarks = selectPrimaryLandmarks(result, trackedAnchor);
 
     // Drawing is handled by the independent previewTick() loop above now —
     // it needs to keep running through calibration too, when this loop
@@ -299,13 +325,44 @@ async function main() {
     const quality = assessLandmarkQuality(landmarks, timestamp);
 
     if (!quality.reliable || !landmarks) {
+      const wasTracking = previousFeature !== null;
       previousFeature = null;
       // Person stepped out / unreadable frame — this is a "hold", not a
       // verdict, so we don't flip to the red "bad posture" state here.
-      setStatus("hold", "잠시 인식이 어려워요", describeUnreliableState(quality));
+      // trackedAnchor is intentionally left as-is (not cleared): a brief
+      // dropout shouldn't discard identity, since selectPrimaryLandmarks
+      // needs it to reacquire the same person rather than whoever's
+      // closest once landmarks come back.
+      const presenceState = describeUnreliableState(quality);
+      setStatus(
+        "hold",
+        describePresenceLabel(presenceState, wasTracking),
+        describePresenceDetail(presenceState, wasTracking),
+      );
+
+      if (presenceState === "NO_PERSON") {
+        if (noPersonSince === null) noPersonSince = timestamp;
+        const sustainedMs = timestamp - noPersonSince;
+        const canRetrigger =
+          !fairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
+        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+          fairy.show(
+            describePresenceDetail(presenceState, wasTracking),
+            describePresenceLabel(presenceState, wasTracking),
+          );
+          noPersonFairyLastShownAt = timestamp;
+          fairyShowing = true;
+        }
+      } else {
+        noPersonSince = null;
+      }
+
       requestAnimationFrame(loop);
       return;
     }
+
+    noPersonSince = null;
+    trackedAnchor = anchorFromLandmarks(landmarks) ?? trackedAnchor;
 
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
     const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);

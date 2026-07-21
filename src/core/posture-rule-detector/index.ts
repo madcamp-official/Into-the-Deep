@@ -14,6 +14,15 @@ import { ALERT_TIMING } from "../temporal-state-machine";
 
 const AMBIGUITY_RATIO = 0.9;
 
+// HEAD_TURN fires constantly during normal conversation (turning to talk to
+// someone off-camera), and user feedback flagged the resulting alarms as
+// distracting during meetings. Still detected/recorded as BAD like any other
+// posture — just never promoted to an alert. (The HEAD_TURN rule itself is
+// currently commented out in posture-rules/index.ts, so this is a no-op
+// until that's re-enabled — left in place so both fixes apply together
+// then instead of this silently regressing.)
+const SILENT_POSTURES: ReadonlySet<PostureRule["postureType"]> = new Set(["HEAD_TURN"]);
+
 // motionEnergy is a raw single-frame delta of already-smoothed features
 // (feature-normalizer's SMOOTHING_ALPHA is only 0.3), so landmark jitter
 // alone regularly spikes it past any fixed gate even while holding a
@@ -162,7 +171,7 @@ export class PostureRuleDetector {
     return {
       timestamp: feature.timestamp,
       state: "BAD",
-      alert: sustained,
+      alert: sustained && !SILENT_POSTURES.has(selected.postureType),
       postureType: selected.postureType,
       matchedFeatures: selected.matchedFeatures,
       postureCandidates: matches.map(({ postureType, score }) => ({ postureType, score })),
