@@ -9,6 +9,10 @@ import { resolve } from "node:path";
 // the web pages. Vite's dev server already serves all four paths with
 // zero config; this only matters for `npm run build`.
 export default defineConfig({
+  // The packaged Electron app loads electron-detector.html/electron-overlay.html
+  // via file:// (no dev server to serve absolute "/assets/..." paths from),
+  // so built asset references need to be relative to the html file instead.
+  base: "./",
   build: {
     rollupOptions: {
       input: {

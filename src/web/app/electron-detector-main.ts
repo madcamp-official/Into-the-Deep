@@ -47,12 +47,19 @@ async function main(): Promise<void> {
   // the stream open while there's no profile to detect against — that's
   // exactly the case where the tray's "캘리브레이션 시작" is about to open
   // product.html and needs the camera for itself.
-  const stored = await loadProfiles();
+  let stored;
+  try {
+    stored = await loadProfiles();
+  } catch (error) {
+    console.error("failed to load saved profile", error);
+    stored = null;
+  }
+
   if (!stored) {
-    console.warn(
-      "no saved posture profile yet — open the tray menu's 캘리브레이션 시작 first, " +
-        "then this window will reload and start detecting",
-    );
+    console.warn("no saved posture profile yet — asking main to open calibration");
+    // First run (or a cleared profile): jump straight to calibration
+    // instead of waiting for someone to find the tray icon.
+    window.electronAPI.notifyNoProfile();
     return;
   }
 
@@ -133,4 +140,4 @@ async function main(): Promise<void> {
   setTimeout(loop, LOOP_INTERVAL_MS);
 }
 
-void main();
+main().catch((error: unknown) => console.error("electron-detector-main crashed", error));

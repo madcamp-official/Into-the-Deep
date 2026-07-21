@@ -1,0 +1,58 @@
+name: Build Electron App
+
+# Packages the Electron shell (electron/main.cjs) for Windows and macOS.
+# Runs on each platform's own GitHub-hosted runner rather than
+# cross-compiling — electron-builder's Windows target needs a
+# symlink-creation privilege for its code-signing-adjacent tooling that a
+# locked-down dev machine may not have (Developer Mode / admin), and its
+# macOS target (dmg via hdiutil, proper .app bundling) isn't meaningfully
+# buildable from a non-Mac at all. Hosted runners have neither restriction.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/product-frontend-ui
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+        env:
+          # Unsigned build: no Apple Developer certificate in this repo.
+          # Without this, electron-builder tries (and fails) to find one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: posturefairy-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            release/*.exe
+            release/*.zip
+            release/*.dmg
+            release/*.blockmap
