@@ -3,6 +3,7 @@ import type { ScenarioLabel } from "../../core/types";
 export type DevelopmentSessionAction =
   | "SCENARIO_STARTED"
   | "DRIFT_ONSET"
+  | "CHANGE_ONSET"
   | "SCENARIO_ENDED"
   | "SESSION_ENDED";
 
@@ -14,11 +15,34 @@ export interface DevelopmentSessionStep {
 
 export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
-  { atSeconds: 20, action: "SCENARIO_STARTED", label: "CAMERA_CHANGE" },
-  { atSeconds: 35, action: "SCENARIO_ENDED", label: "CAMERA_CHANGE" },
-  { atSeconds: 45, action: "SCENARIO_STARTED", label: "CAMERA_CHANGE" },
-  { atSeconds: 60, action: "SCENARIO_ENDED", label: "CAMERA_CHANGE" },
-  { atSeconds: 70, action: "SESSION_ENDED" },
+  { atSeconds: 10, action: "SCENARIO_STARTED", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 25, action: "CHANGE_ONSET", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 35, action: "SCENARIO_ENDED", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 45, action: "SCENARIO_STARTED", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 60, action: "CHANGE_ONSET", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 70, action: "SCENARIO_ENDED", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 80, action: "SCENARIO_STARTED", label: "CAMERA_ROLL" },
+  { atSeconds: 95, action: "CHANGE_ONSET", label: "CAMERA_ROLL" },
+  { atSeconds: 105, action: "SCENARIO_ENDED", label: "CAMERA_ROLL" },
+  { atSeconds: 115, action: "SCENARIO_STARTED", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 130, action: "CHANGE_ONSET", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 140, action: "SCENARIO_ENDED", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 150, action: "SCENARIO_STARTED", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 165, action: "CHANGE_ONSET", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 175, action: "SCENARIO_ENDED", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 185, action: "SCENARIO_STARTED", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 200, action: "CHANGE_ONSET", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 210, action: "SCENARIO_ENDED", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 220, action: "SCENARIO_STARTED", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 235, action: "CHANGE_ONSET", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 245, action: "SCENARIO_ENDED", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 255, action: "SCENARIO_STARTED", label: "CAMERA_SCALE" },
+  { atSeconds: 270, action: "CHANGE_ONSET", label: "CAMERA_SCALE" },
+  { atSeconds: 280, action: "SCENARIO_ENDED", label: "CAMERA_SCALE" },
+  { atSeconds: 290, action: "SCENARIO_STARTED", label: "CAMERA_RETURN" },
+  { atSeconds: 305, action: "CHANGE_ONSET", label: "CAMERA_RETURN" },
+  { atSeconds: 320, action: "SCENARIO_ENDED", label: "CAMERA_RETURN" },
+  { atSeconds: 330, action: "SESSION_ENDED" },
 ];
 
 // Only scenarios whose label matches an active postureType in
@@ -30,9 +54,6 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
 // ROUNDED_SHOULDERS/CHIN_TUCK/SHOULDERS_ONLY_TWIST (rules deleted — the
 // latter two were dead code, their required feature was never computed).
 // Added HEAD_DOWN, which has an active rule but wasn't in the script before.
-// HEAD_TURN's own steps below are commented out (not removed) — its rule
-// is temporarily disabled in posture-rules/index.ts, decided to drop it
-// for now rather than delete it.
 //
 // Gap between scenarios widened 5s -> 10s and hold widened 8s -> 10s: a
 // replay of a real recording with the 5s/8s version showed a suspiciously
@@ -56,10 +77,9 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 89, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
   { atSeconds: 92, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
   { atSeconds: 102, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  // HEAD_TURN disabled for now (decided to drop it, not delete it):
-  // { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
-  // { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
-  // { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
+  { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
+  { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
+  { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
   { atSeconds: 135, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
   { atSeconds: 138, action: "DRIFT_ONSET", label: "HEAD_TILT" },
   { atSeconds: 148, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
