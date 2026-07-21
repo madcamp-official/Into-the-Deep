@@ -64,9 +64,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   },
   {
     postureType: "BACKWARD_LEAN",
-    requiredLandmarks: CORE,
-    required: [{ feature: "forwardLeanProxy", operator: "LT", threshold: -2, reference: "CALIBRATION" }],
-    supporting: ["headShoulderDistanceRatio", "headYRatio"],
+    requiredLandmarks: EYES,
+    // Used forwardLeanProxy (= faceToShoulderRatio + pitchProxy, delta'd
+    // together). Since pitchProxy is baked into that sum, a pure head-back
+    // tilt (HEAD_BACK, no torso movement) drags forwardLeanProxy down too
+    // and could fire this as if the whole body leaned back. Whole-body lean
+    // is really about faceToShoulderRatio alone (face gets smaller as the
+    // torso moves away) — using that directly instead of the combined
+    // proxy keeps this independent of pure head-angle changes.
+    required: [
+      { feature: "faceToShoulderRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+    ],
+    supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
     reason: "upper body is leaning backward",
   },
   {
@@ -145,11 +154,19 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_BACK",
     requiredLandmarks: EYES,
+    // The forwardLeanProxy ABS_LT exclusion used to fight its own first
+    // condition: forwardLeanProxy bakes pitchProxy into its sum, so a big
+    // enough pitchProxy drop to satisfy condition 1 usually also pushes
+    // forwardLeanProxy well past the "stayed near 0" exclusion in
+    // condition 2 — the rule could end up almost never matching.
+    // faceToShoulderRatio directly is the actual "torso hasn't moved"
+    // signal (independent of pitchProxy), so excluding on that instead
+    // lets this fire whenever the head alone tilts back.
     required: [
       { feature: "pitchProxy", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "forwardLeanProxy", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" },
     ],
-    supporting: ["headYRatio", "headShoulderDistanceRatio"],
+    supporting: ["headYRatio", "headShoulderDistanceRatio", "forwardLeanProxy"],
     reason: "head is tilted backward without a matching torso lean",
   },
   {
