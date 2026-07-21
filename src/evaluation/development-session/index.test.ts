@@ -19,7 +19,7 @@ describe("development session preset", () => {
       label: "NORMAL_WORK",
     });
     expect(second?.step).toEqual({
-      atSeconds: 15,
+      atSeconds: 20,
       action: "SCENARIO_STARTED",
       label: "FORWARD_HEAD",
     });

@@ -30,42 +30,51 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
 // ROUNDED_SHOULDERS/CHIN_TUCK/SHOULDERS_ONLY_TWIST (rules deleted — the
 // latter two were dead code, their required feature was never computed).
 // Added HEAD_DOWN, which has an active rule but wasn't in the script before.
+//
+// Gap between scenarios widened 5s -> 10s and hold widened 8s -> 10s: a
+// replay of a real recording with the 5s/8s version showed a suspiciously
+// high NORMAL_WORK false-alert rate and near-zero accuracy on a few
+// postures — plausibly because 5s wasn't enough to fully settle out of the
+// previous posture before the next one started, and 8s wasn't enough
+// margin for v2's 1.5s sustained-match requirement on postures that take a
+// few seconds to settle into. Widening isolates whether those were real
+// bugs or just this timing artifact before any threshold gets retuned.
 export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
-  { atSeconds: 15, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
-  { atSeconds: 17, action: "DRIFT_ONSET", label: "FORWARD_HEAD" },
-  { atSeconds: 25, action: "SCENARIO_ENDED", label: "FORWARD_HEAD" },
-  { atSeconds: 30, action: "SCENARIO_STARTED", label: "HEAD_DOWN" },
-  { atSeconds: 32, action: "DRIFT_ONSET", label: "HEAD_DOWN" },
-  { atSeconds: 40, action: "SCENARIO_ENDED", label: "HEAD_DOWN" },
-  { atSeconds: 45, action: "SCENARIO_STARTED", label: "FORWARD_LEAN" },
-  { atSeconds: 47, action: "DRIFT_ONSET", label: "FORWARD_LEAN" },
-  { atSeconds: 55, action: "SCENARIO_ENDED", label: "FORWARD_LEAN" },
-  { atSeconds: 60, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
-  { atSeconds: 62, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
-  { atSeconds: 70, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  { atSeconds: 75, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
-  { atSeconds: 77, action: "DRIFT_ONSET", label: "HEAD_TURN" },
-  { atSeconds: 85, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
-  { atSeconds: 90, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
-  { atSeconds: 92, action: "DRIFT_ONSET", label: "HEAD_TILT" },
-  { atSeconds: 100, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
-  { atSeconds: 105, action: "SCENARIO_STARTED", label: "CHIN_REST" },
-  { atSeconds: 107, action: "DRIFT_ONSET", label: "CHIN_REST" },
-  { atSeconds: 115, action: "SCENARIO_ENDED", label: "CHIN_REST" },
-  { atSeconds: 120, action: "SCENARIO_STARTED", label: "HEAD_BACK" },
-  { atSeconds: 122, action: "DRIFT_ONSET", label: "HEAD_BACK" },
-  { atSeconds: 130, action: "SCENARIO_ENDED", label: "HEAD_BACK" },
-  { atSeconds: 135, action: "SCENARIO_STARTED", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 137, action: "DRIFT_ONSET", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 145, action: "SCENARIO_ENDED", label: "SHOULDER_ASYMMETRY" },
-  { atSeconds: 150, action: "SCENARIO_STARTED", label: "ARMREST_LEAN" },
-  { atSeconds: 152, action: "DRIFT_ONSET", label: "ARMREST_LEAN" },
-  { atSeconds: 160, action: "SCENARIO_ENDED", label: "ARMREST_LEAN" },
-  { atSeconds: 165, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
-  { atSeconds: 167, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
-  { atSeconds: 175, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
-  { atSeconds: 180, action: "SESSION_ENDED" },
+  { atSeconds: 20, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
+  { atSeconds: 23, action: "DRIFT_ONSET", label: "FORWARD_HEAD" },
+  { atSeconds: 33, action: "SCENARIO_ENDED", label: "FORWARD_HEAD" },
+  { atSeconds: 43, action: "SCENARIO_STARTED", label: "HEAD_DOWN" },
+  { atSeconds: 46, action: "DRIFT_ONSET", label: "HEAD_DOWN" },
+  { atSeconds: 56, action: "SCENARIO_ENDED", label: "HEAD_DOWN" },
+  { atSeconds: 66, action: "SCENARIO_STARTED", label: "FORWARD_LEAN" },
+  { atSeconds: 69, action: "DRIFT_ONSET", label: "FORWARD_LEAN" },
+  { atSeconds: 79, action: "SCENARIO_ENDED", label: "FORWARD_LEAN" },
+  { atSeconds: 89, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
+  { atSeconds: 92, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
+  { atSeconds: 102, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
+  { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
+  { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
+  { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
+  { atSeconds: 135, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
+  { atSeconds: 138, action: "DRIFT_ONSET", label: "HEAD_TILT" },
+  { atSeconds: 148, action: "SCENARIO_ENDED", label: "HEAD_TILT" },
+  { atSeconds: 158, action: "SCENARIO_STARTED", label: "CHIN_REST" },
+  { atSeconds: 161, action: "DRIFT_ONSET", label: "CHIN_REST" },
+  { atSeconds: 171, action: "SCENARIO_ENDED", label: "CHIN_REST" },
+  { atSeconds: 181, action: "SCENARIO_STARTED", label: "HEAD_BACK" },
+  { atSeconds: 184, action: "DRIFT_ONSET", label: "HEAD_BACK" },
+  { atSeconds: 194, action: "SCENARIO_ENDED", label: "HEAD_BACK" },
+  { atSeconds: 204, action: "SCENARIO_STARTED", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 207, action: "DRIFT_ONSET", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 217, action: "SCENARIO_ENDED", label: "SHOULDER_ASYMMETRY" },
+  { atSeconds: 227, action: "SCENARIO_STARTED", label: "ARMREST_LEAN" },
+  { atSeconds: 230, action: "DRIFT_ONSET", label: "ARMREST_LEAN" },
+  { atSeconds: 240, action: "SCENARIO_ENDED", label: "ARMREST_LEAN" },
+  { atSeconds: 250, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
+  { atSeconds: 253, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
+  { atSeconds: 263, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
+  { atSeconds: 273, action: "SESSION_ENDED" },
 ];
 
 export function getNextDevelopmentStep(
