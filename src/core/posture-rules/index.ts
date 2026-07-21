@@ -302,17 +302,13 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["headYRatio", "headShoulderDistanceRatio", "faceToShoulderRatio", "forwardLeanProxy"],
     reason: "head is tilted backward without a matching torso lean",
   },
-  {
-    postureType: "CHIN_TUCK",
-    requiredLandmarks: EYES,
-    required: [
-      { feature: "faceToShoulderRatioDelta", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-    ],
-    anyOf: [{ feature: "pitchProxy", operator: "LT", threshold: -1.5, reference: "CALIBRATION" }],
-    supporting: ["headXRatio"],
-    reason: "chin is pulled backward relative to the calibrated head position",
-  },
+  // CHIN_TUCK intentionally removed: its required faceToShoulderRatioDelta
+  // condition is dead code — that feature is never actually computed by
+  // feature-normalizer (only mentioned in a comment describing what
+  // forwardLeanProxy conceptually becomes after generic calibration-delta
+  // normalization, not a real FrameFeature field), so the condition always
+  // scored undefined and this rule could never match, same as the
+  // torsoRotationProxy situation that kills SHOULDERS_ONLY_TWIST.
   {
     postureType: "TORSO_TWIST",
     requiredLandmarks: CORE,
