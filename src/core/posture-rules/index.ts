@@ -270,10 +270,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // calibration median for this feature depends entirely on incidental
     // hand position during that one 5-second window, so it isn't a
     // meaningful "neutral" reference the way head/shoulder features are.
-    // ABS_LT against 0 with the default MAD (0.05) instead uses a fixed,
-    // session-independent scale: genuine rests normalized to ~21-25, the
-    // off-to-the-side raise to ~34-35 — 28 sits in the gap.
-    required: [{ feature: "handFaceDistance", operator: "ABS_LT", threshold: 28, reference: "ABSOLUTE" }],
+    // Threshold lowered 28 -> 6: switching handFaceDistance's computation to
+    // Hand Landmarker (middleFingerMcp-to-mouth) changed its scale entirely
+    // — a fresh session replay showed genuine CHIN_REST normalized to
+    // 3.33-5.80, so 28 was a no-op (always passed) rather than a real gate.
+    // 6 at least covers every genuine CHIN_REST sample seen so far. Some
+    // overlap with NORMAL_WORK remains at this scale (a hand passing near
+    // the face briefly during typing can read just as close) — the dwell/
+    // sustained-match mechanism is relied on to filter out those brief,
+    // non-sustained overlaps rather than this single-frame threshold alone.
+    required: [{ feature: "handFaceDistance", operator: "ABS_LT", threshold: 6, reference: "ABSOLUTE" }],
     // handShoulderDistance added after live capture-button testing: once
     // profile-builder started giving handFaceDistance a real CALIBRATION
     // center (see profile-builder fix), a genuine chin-rest scored
