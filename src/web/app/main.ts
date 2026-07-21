@@ -1069,6 +1069,7 @@ function createMarkerButton(label: string, disabled: boolean): HTMLButtonElement
 function isDriftScenario(label: ScenarioLabel["label"]): boolean {
   return label === "FORWARD_LEAN" ||
     label === "FORWARD_HEAD" ||
+    label === "HEAD_DOWN" ||
     label === "LEFT_LEAN" ||
     label === "RIGHT_LEAN" ||
     label === "SIDE_SHIFT" ||
@@ -1090,6 +1091,7 @@ function scenarioName(label: ScenarioLabel["label"]): string {
   const names: Partial<Record<ScenarioLabel["label"], string>> = {
     FORWARD_LEAN: "앞으로 숙이는",
     FORWARD_HEAD: "거북목",
+    HEAD_DOWN: "고개를 숙이는",
     LEFT_LEAN: "왼쪽으로 기울이는",
     RIGHT_LEAN: "오른쪽으로 기울이는",
     SIDE_SHIFT: "좌우로 이동하는",
