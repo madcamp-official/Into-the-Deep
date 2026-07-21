@@ -2,13 +2,14 @@ import type {
   CameraProfile,
   CameraAssessment,
   CameraTransform,
+  DetectionEvent,
   FrameFeature,
   MADProfile,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
 
-export type SessionType = "POSTURE" | "CAMERA";
+export type SessionType = "POSTURE" | "CAMERA" | "CAMERA_BOUNDARY";
 
 export type SessionMarkerType =
   | "SCENARIO_STARTED"
@@ -40,6 +41,7 @@ export interface SessionLogEntry {
   cameraState: string;
   cameraTransform?: CameraTransform;
   cameraAssessment?: CameraAssessment;
+  postureEvent?: DetectionEvent;
   confidence: number;
   features: Omit<FrameFeature, "timestamp" | "confidence">;
   markers?: SessionMarker[];
@@ -83,6 +85,7 @@ export class SessionRecorder {
     cameraState: string,
     cameraTransform?: CameraTransform | null,
     cameraAssessment?: CameraAssessment | null,
+    postureEvent?: DetectionEvent | null,
   ): void {
     if (!this.recording) return;
 
@@ -98,6 +101,7 @@ export class SessionRecorder {
       cameraState,
       ...(cameraTransform ? { cameraTransform } : {}),
       ...(cameraAssessment ? { cameraAssessment } : {}),
+      ...(postureEvent ? { postureEvent } : {}),
       confidence: feature.confidence,
       features,
     };

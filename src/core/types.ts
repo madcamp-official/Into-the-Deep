@@ -185,6 +185,17 @@ export interface CameraTransformSnapshot {
   inlierRatio: number;
   reprojectionError: number;
   confidence: number;
+  /** Pixel-space affine map from calibration/reference view to current view. */
+  affine?: AffineTransform;
+}
+
+export interface AffineTransform {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
 }
 
 export interface CameraTransform extends CameraTransformSnapshot {

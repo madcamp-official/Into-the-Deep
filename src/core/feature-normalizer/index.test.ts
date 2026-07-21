@@ -366,3 +366,74 @@ describe("toFrameFeature derived posture-rule features", () => {
     expect(feature?.shoulderWidthRatio).toBeCloseTo(feature?.bodyScale ?? NaN, 10);
   });
 });
+
+
+describe("applyCameraCorrectionToLandmarks", () => {
+  it("uses the inverse affine matrix when one is available", async () => {
+    const { applyCameraCorrectionToLandmarks } = await import("./index");
+    const corrected = applyCameraCorrectionToLandmarks(
+      [{ x: 0.7, y: 0.5, z: 0, visibility: 1 }],
+      {
+        timestamp: 1,
+        source: "BACKGROUND_FEATURES",
+        translationX: 0.1,
+        translationY: 0,
+        scale: 0.2,
+        roll: 0,
+        affine: { a: 1.2, b: 0, c: 32, d: 0, e: 1, f: 0 },
+        trackedPointCount: 12,
+        inlierRatio: 1,
+        reprojectionError: 0,
+        confidence: 1,
+      },
+    );
+
+    // Current pixel x=224 maps to reference pixel x=(224-32)/1.2=160.
+    expect(corrected[0].x).toBeCloseTo(0.5, 5);
+    expect(corrected[0].y).toBeCloseTo(0.5, 5);
+  });
+
+  it("removes the camera translation", async () => {
+    const { applyCameraCorrectionToLandmarks } = await import("./index");
+    const corrected = applyCameraCorrectionToLandmarks(
+      [{ x: 0.65, y: 0.4, z: 0, visibility: 1 }],
+      {
+        timestamp: 1,
+        source: "BACKGROUND_FEATURES",
+        translationX: 0.1,
+        translationY: -0.05,
+        scale: 0,
+        roll: 0,
+        trackedPointCount: 12,
+        inlierRatio: 1,
+        reprojectionError: 0,
+        confidence: 1,
+      },
+    );
+
+    expect(corrected[0].x).toBeCloseTo(0.55);
+    expect(corrected[0].y).toBeCloseTo(0.45);
+  });
+
+  it("undoes scale and roll around the normalized image center", async () => {
+    const { applyCameraCorrectionToLandmarks } = await import("./index");
+    const corrected = applyCameraCorrectionToLandmarks(
+      [{ x: 0.5, y: 0.6, z: 0, visibility: 1 }],
+      {
+        timestamp: 1,
+        source: "BACKGROUND_FEATURES",
+        translationX: 0,
+        translationY: 0,
+        scale: 0.2,
+        roll: Math.PI / 2,
+        trackedPointCount: 12,
+        inlierRatio: 1,
+        reprojectionError: 0,
+        confidence: 1,
+      },
+    );
+
+    expect(corrected[0].x).toBeCloseTo(0.583333, 5);
+    expect(corrected[0].y).toBeCloseTo(0.5, 5);
+  });
+});

@@ -201,7 +201,9 @@ export class BackgroundFeatureTracker {
 function createPoints(width: number, height: number): Point[] {
   const points: Point[] = [];
   for (const y of [0.12, 0.28, 0.72, 0.88]) {
-    for (const x of [0.08, 0.2, 0.35, 0.65, 0.8, 0.92]) {
+    // Keep tracking away from the torso and face. Those central pixels can
+    // move when the user adjusts posture even while the camera is stationary.
+    for (const x of [0.2, 0.8]) {
       points.push({ x: width * x, y: height * y });
     }
   }
@@ -309,6 +311,7 @@ function estimateTransform(matches: Array<{ from: Point; to: Point; score: numbe
     roll,
     yawProxy,
     pitchProxy,
+    affine: model,
     inlierRatio,
     reprojectionError: error,
   };

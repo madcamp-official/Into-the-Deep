@@ -66,6 +66,7 @@ const REQUIRED_STABLE_FRAMES = 3;
 const MOTION_ONSET_THRESHOLD = 0.02;
 const MOTION_END_THRESHOLD = 0.01;
 const SETTLING_DELAY_MS = 450;
+const REQUIRED_MOTION_ONSET_FRAMES = 3;
 
 // Keeps short tracking gaps from becoming camera-change alerts. A prolonged
 // gap remains UNKNOWN so the UI can ask the user to check the camera.
@@ -74,6 +75,7 @@ export class CameraAssessmentTracker {
   private unknownSince: number | null = null;
   private candidateState: CameraAssessment["state"] | null = null;
   private candidateCount = 0;
+  private motionCandidateCount = 0;
   private motionPhase: NonNullable<CameraAssessment["motionPhase"]> = "STABLE";
   private lastMotionAt = 0;
   private episodeFrameCount = 0;
@@ -85,6 +87,7 @@ export class CameraAssessmentTracker {
     this.unknownSince = null;
     this.candidateState = null;
     this.candidateCount = 0;
+    this.motionCandidateCount = 0;
     this.motionPhase = "STABLE";
     this.lastMotionAt = 0;
     this.episodeFrameCount = 0;
@@ -104,13 +107,21 @@ export class CameraAssessmentTracker {
       : 0;
     let episodeFinished = false;
 
-    if (this.motionPhase === "STABLE" && reliable && motionMagnitude >= MOTION_ONSET_THRESHOLD) {
-      this.motionPhase = "MOVING";
-      this.lastMotionAt = timestamp;
-      this.episodeFrameCount = 0;
-      this.episodeUnknownFrameCount = 0;
-      this.episodeTransforms = [];
-    } else if (this.motionPhase !== "STABLE") {
+    if (this.motionPhase === "STABLE") {
+      if (reliable && motionMagnitude >= MOTION_ONSET_THRESHOLD) {
+        this.motionCandidateCount += 1;
+        if (this.motionCandidateCount >= REQUIRED_MOTION_ONSET_FRAMES) {
+          this.motionPhase = "MOVING";
+          this.lastMotionAt = timestamp;
+          this.episodeFrameCount = 0;
+          this.episodeUnknownFrameCount = 0;
+          this.episodeTransforms = [];
+          this.motionCandidateCount = 0;
+        }
+      } else {
+        this.motionCandidateCount = 0;
+      }
+    } else {
       if (motionMagnitude >= MOTION_END_THRESHOLD) {
         this.motionPhase = "MOVING";
         this.lastMotionAt = timestamp;

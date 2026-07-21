@@ -9,7 +9,11 @@ import {
   detectHandsForVideoFrame,
 } from "../camera-adapter/hand-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
-import { toFrameFeature } from "../../core/feature-normalizer";
+import {
+  applyCameraCorrectionToHandLandmarks,
+  applyCameraCorrectionToLandmarks,
+  toFrameFeature,
+} from "../../core/feature-normalizer";
 import {
   buildCameraProfile,
   computeCameraDelta,
@@ -44,6 +48,10 @@ import {
   analyzeCameraVerificationSession,
   formatCameraVerificationMetrics,
 } from "../../evaluation/camera-verification";
+import {
+  analyzeCameraBoundarySession,
+  formatCameraBoundaryMetrics,
+} from "../../evaluation/camera-boundary";
 import { assessCameraTransform, CameraAssessmentTracker } from "../../core/camera-assessment";
 import {
   getNextDevelopmentStep,
@@ -89,6 +97,37 @@ function describeMatchedFeatures(event: DetectionEvent | null): string {
 const CALIBRATION_DURATION_MS = 5000;
 const MIN_CALIBRATION_FRAMES = 10;
 const AUTOMATED_SESSION_COUNTDOWN_SECONDS = 3;
+const CAMERA_BOUNDARY_SETTLE_MS = 2000;
+const CAMERA_BOUNDARY_PRECISION = 0.015;
+const CAMERA_BOUNDARY_MAX_ATTEMPTS = 8;
+
+interface CameraBoundaryScenario {
+  label: ScenarioLabel["label"];
+  name: string;
+  instruction: string;
+}
+
+interface CameraBoundarySession {
+  scenarioIndex: number;
+  attempts: number;
+  phase: "MOVE" | "WAIT_STABLE" | "RETURN";
+  stableSince: number | null;
+  measured: boolean;
+  lower: number | null;
+  upper: number | null;
+  changeMarked: boolean;
+}
+
+const CAMERA_BOUNDARY_SCENARIOS: readonly CameraBoundaryScenario[] = [
+  { label: "CAMERA_TRANSLATION_X", name: "카메라 좌우 이동", instruction: "노트북 높이와 화면 각도는 유지한 채, 노트북을 좌우로 조금씩 이동하세요." },
+  { label: "CAMERA_TRANSLATION_Y", name: "카메라 상하 이동", instruction: "화면 각도는 유지한 채, 노트북을 위나 아래로 조금씩 이동하세요." },
+  { label: "CAMERA_ROLL", name: "화면 좌우 회전", instruction: "노트북 위치는 유지하고 화면만 좌우로 조금씩 회전하세요." },
+  { label: "CAMERA_YAW_LEFT", name: "카메라 왼쪽 회전", instruction: "노트북 위치는 유지하고 카메라가 사용자의 왼쪽을 보도록 조금씩 돌리세요." },
+  { label: "CAMERA_YAW_RIGHT", name: "카메라 오른쪽 회전", instruction: "노트북 위치는 유지하고 카메라가 사용자의 오른쪽을 보도록 조금씩 돌리세요." },
+  { label: "CAMERA_PITCH_UP", name: "카메라 위쪽 회전", instruction: "노트북 위치는 유지하고 화면 위쪽이 조금 들리도록 기울이세요." },
+  { label: "CAMERA_PITCH_DOWN", name: "카메라 아래쪽 회전", instruction: "노트북 위치는 유지하고 화면 위쪽이 조금 내려가도록 기울이세요." },
+  { label: "CAMERA_SCALE", name: "카메라 거리 변화", instruction: "노트북을 사용자에게 가까이 또는 멀리 조금씩 이동하세요." },
+];
 
 async function main() {
   const app = document.querySelector<HTMLDivElement>("#app");
@@ -142,6 +181,9 @@ async function main() {
   const cameraSessionButton = document.createElement("button");
   cameraSessionButton.textContent = "Development_Camera_Session";
   cameraSessionButton.disabled = true;
+  const cameraBoundarySessionButton = document.createElement("button");
+  cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션";
+  cameraBoundarySessionButton.disabled = true;
   const downloadButton = document.createElement("button");
   const thresholdSweepButton = document.createElement("button");
   thresholdSweepButton.textContent = "Threshold sweep (JSONL)";
@@ -214,6 +256,7 @@ async function main() {
     captureButton,
     automatedSessionButton,
     cameraSessionButton,
+    cameraBoundarySessionButton,
     downloadButton,
     thresholdSweepButton,
     thresholdFileInput,
@@ -283,6 +326,7 @@ async function main() {
     stepIndex: number;
     steps: readonly DevelopmentSessionStep[];
   } | null = null;
+  let cameraBoundarySession: CameraBoundarySession | null = null;
   let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
   let cameraVerificationMode = false;
@@ -292,6 +336,7 @@ async function main() {
   let baselineVerificationTransforms: CameraTransform[] = [];
   let baselineAssessment: CameraAssessment | null = null;
   let baselineVerificationFinalized = false;
+  let postMotionVerificationBlockedUntil = 0;
   let previousCameraMotionPhase: "STABLE" | "MOVING" | "SETTLING" = "STABLE";
   let latestEvent: DetectionEvent | null = null;
   let latestV2Event: DetectionEvent | null = null;
@@ -329,6 +374,7 @@ async function main() {
     baselineVerificationTransforms = [];
     baselineAssessment = null;
     baselineVerificationFinalized = false;
+    postMotionVerificationBlockedUntil = 0;
     previousCameraMotionPhase = "STABLE";
     calibrationDeadline = performance.now() + CALIBRATION_DURATION_MS;
     calibrationMessage = "";
@@ -346,6 +392,21 @@ async function main() {
     baselineVerificationTransforms = [];
     baselineAssessment = null;
     baselineVerificationFinalized = false;
+  }
+
+  function createCalibrationBaselineAssessment(timestamp: number): CameraAssessment {
+    return {
+      timestamp,
+      state: "VALID",
+      scaleCorrection: 0,
+      offsetX: 0,
+      offsetY: 0,
+      reliability: 1,
+      reason: ["calibration baseline established"],
+      motionPhase: "STABLE",
+      episodeFrameCount: 0,
+      episodeUnknownFrameCount: 0,
+    };
   }
 
   async function finishCalibration(
@@ -382,6 +443,17 @@ async function main() {
       backgroundReference = nextBackgroundReference ?? undefined;
       backgroundFeatureTracker.setReference(backgroundReference);
       profileCreatedAt = createdAt;
+      baselineVerificationUntil = 0;
+      baselineVerificationKind = null;
+      baselineVerificationTransforms = [];
+      baselineAssessment = backgroundReference
+        ? createCalibrationBaselineAssessment(createdAt)
+        : null;
+      baselineVerificationFinalized = Boolean(backgroundReference);
+      // Give the tracker time to initialize its previous frame. The first
+      // frame-to-frame jump after calibration is not a user camera movement.
+      postMotionVerificationBlockedUntil = performance.now() + 2000;
+      previousCameraMotionPhase = "STABLE";
       calibrationMessage = "profile saved";
     } catch (error) {
       calibrationMessage = `profile save failed: ${String(error)}`;
@@ -409,6 +481,7 @@ async function main() {
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
     cameraSessionButton.disabled = false;
+    cameraBoundarySessionButton.disabled = false;
   }
 
   calibrateButton.onclick = startCalibration;
@@ -476,6 +549,7 @@ async function main() {
     toggleAutomatedSession("POSTURE", STANDARD_DEVELOPMENT_SESSION, automatedSessionButton);
   cameraSessionButton.onclick = () =>
     toggleAutomatedSession("CAMERA", CAMERA_DEVELOPMENT_SESSION, cameraSessionButton);
+  cameraBoundarySessionButton.onclick = startCameraBoundarySession;
 
   modeButton.onclick = () => {
     cameraVerificationMode = !cameraVerificationMode;
@@ -529,6 +603,7 @@ async function main() {
     downloadButton.disabled = true;
     automatedSessionButton.textContent = "Development_Posture_Session";
     cameraSessionButton.textContent = "Development_Camera_Session";
+    cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션";
     scenarioStartedButton.disabled = false;
     scenarioEndedButton.disabled = false;
     driftOnsetButton.textContent = sessionType === "CAMERA" ? "Change onset" : "Drift onset";
@@ -541,11 +616,13 @@ async function main() {
     endScenario();
     const entries = recorder.stop();
     automatedSession = null;
+    cameraBoundarySession = null;
     recordButton.textContent = "측정 시작";
     automatedSessionButton.textContent = "자동 Development Session";
     lastSessionLog = toJSONL(entries);
     automatedSessionButton.textContent = "Development_Posture_Session";
     cameraSessionButton.textContent = "Development_Camera_Session";
+    cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션";
     if (wasAutomated && currentSessionType === "POSTURE") {
       const analysis = analyzeDevelopmentSession(entries);
       console.info("Development Posture Session analysis", analysis);
@@ -619,6 +696,173 @@ async function main() {
     }
   }
 
+  function startCameraBoundarySession(): void {
+    if (recorder.isRecording() || automatedSession || !profile) return;
+    beginRecording("CAMERA_BOUNDARY");
+    cameraBoundarySession = {
+      scenarioIndex: 0,
+      attempts: 0,
+      phase: "MOVE",
+      stableSince: null,
+      measured: false,
+      lower: null,
+      upper: null,
+      changeMarked: false,
+    };
+    startCameraBoundaryScenario(0);
+    cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션 (진행 중)";
+    setManualControlsDisabled(true);
+  }
+
+  function startCameraBoundaryScenario(index: number): void {
+    const scenario = CAMERA_BOUNDARY_SCENARIOS[index];
+    if (!scenario || !cameraBoundarySession) return;
+    selectedScenario = scenario.label;
+    scenarioSelect.value = scenario.label;
+    scenarioActive = true;
+    cameraBoundarySession.scenarioIndex = index;
+    cameraBoundarySession.attempts = 0;
+    cameraBoundarySession.phase = "MOVE";
+    cameraBoundarySession.stableSince = null;
+    cameraBoundarySession.measured = false;
+    cameraBoundarySession.lower = null;
+    cameraBoundarySession.upper = null;
+    cameraBoundarySession.changeMarked = false;
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(timestamp, "SETTLING");
+    recorder.mark({ timestamp, type: "SCENARIO_STARTED", label: scenario.label });
+    sessionInstruction.textContent = [
+      `카메라 경계 탐색 ${index + 1}/${CAMERA_BOUNDARY_SCENARIOS.length}: ${scenario.name}`,
+      "정상 자세를 유지하세요.",
+      scenario.instruction,
+      "조금 움직인 뒤 움직임을 멈추고 기다리세요.",
+    ].join("\n");
+  }
+
+  function processCameraBoundarySession(
+    timestamp: number,
+    motionPhase: NonNullable<CameraAssessment["motionPhase"]>,
+    assessment: CameraAssessment,
+    verificationActive: boolean,
+    event: DetectionEvent | null,
+  ): void {
+    const session = cameraBoundarySession;
+    const scenario = session ? CAMERA_BOUNDARY_SCENARIOS[session.scenarioIndex] : undefined;
+    if (!session || !scenario || !recorder.isRecording()) return;
+
+    if (motionPhase !== "STABLE") {
+      if (!session.changeMarked) {
+        scenarioLabeler.setLabel(timestamp, scenario.label);
+        recorder.mark({ timestamp, type: "CHANGE_ONSET", label: scenario.label });
+        session.changeMarked = true;
+      }
+      session.phase = "WAIT_STABLE";
+      session.stableSince = null;
+      session.measured = false;
+      sessionInstruction.textContent =
+        "카메라 이동 중입니다. 이동 중에는 자세 판정을 보류합니다. 움직임을 멈추고 기다리세요.";
+      return;
+    }
+
+    if (session.phase === "WAIT_STABLE") {
+      session.phase = "MOVE";
+      session.stableSince = timestamp;
+      sessionInstruction.textContent =
+        "카메라가 멈췄습니다. 보정 후 자세를 확인하는 중입니다. 2초 동안 기다리세요.";
+      return;
+    }
+
+    const magnitude = cameraScenarioMagnitude(scenario.label, assessment.transform);
+    if (session.phase === "RETURN") {
+      if (!verificationActive && assessment.state === "VALID" && magnitude < 0.025) {
+        if (session.scenarioIndex + 1 >= CAMERA_BOUNDARY_SCENARIOS.length) {
+          sessionInstruction.textContent = "모든 카메라 변화 시나리오를 완료했습니다. 세션을 종료합니다.";
+          finishRecording();
+        } else {
+          startCameraBoundaryScenario(session.scenarioIndex + 1);
+        }
+      } else {
+        sessionInstruction.textContent =
+          "Calibration 당시의 기준 위치로 돌아간 뒤, 움직임을 멈춰주세요.";
+      }
+      return;
+    }
+
+    if (session.phase !== "MOVE" || session.measured || verificationActive) return;
+    if (session.stableSince === null) {
+      session.stableSince = timestamp;
+      sessionInstruction.textContent =
+        "이제 안내된 방향으로 카메라를 조금 움직인 뒤, 움직임을 멈추세요.";
+      return;
+    }
+    if (timestamp - session.stableSince < CAMERA_BOUNDARY_SETTLE_MS) {
+      sessionInstruction.textContent = "움직임이 끝났습니다. 카메라를 그대로 두고 2초 동안 기다리세요.";
+      return;
+    }
+    if (assessment.state === "UNKNOWN" || !assessment.transform) {
+      sessionInstruction.textContent =
+        "배경 특징점을 충분히 추적하지 못했습니다. 카메라를 가리지 말고 잠시 기다리세요.";
+      return;
+    }
+
+    session.measured = true;
+    session.attempts += 1;
+    const postureAlert = event?.alert ?? false;
+    const correctionSucceeded =
+      (assessment.state === "VALID" || assessment.state === "ADJUSTED") && !postureAlert;
+    if (correctionSucceeded) session.lower = magnitude;
+    else session.upper = magnitude;
+
+    const hasBracket = session.lower !== null && session.upper !== null;
+    const bracketWidth = hasBracket ? Math.abs(session.upper! - session.lower!) : Infinity;
+    const finishScenario = assessment.state === "RECALIBRATION_REQUIRED" ||
+      (hasBracket && bracketWidth <= CAMERA_BOUNDARY_PRECISION) ||
+      session.attempts >= CAMERA_BOUNDARY_MAX_ATTEMPTS;
+    if (finishScenario) {
+      recorder.mark({ timestamp, type: "SCENARIO_ENDED", label: scenario.label });
+      scenarioActive = false;
+      session.phase = "RETURN";
+      session.measured = false;
+      sessionInstruction.textContent = assessment.state === "RECALIBRATION_REQUIRED"
+        ? "재측정 필요 범위에 도달했습니다. 기준 위치로 돌아가세요."
+        : "이 시나리오의 경계 측정을 마쳤습니다. 기준 위치로 돌아가세요.";
+      if (session.scenarioIndex + 1 >= CAMERA_BOUNDARY_SCENARIOS.length) {
+        sessionInstruction.textContent += " 모든 시나리오가 끝나면 세션을 종료하세요.";
+      }
+      return;
+    }
+
+    session.phase = postureAlert ? "RETURN" : "MOVE";
+    session.measured = false;
+    session.stableSince = timestamp;
+    sessionInstruction.textContent = postureAlert
+      ? "보정 후에도 잘못된 자세로 판정되었습니다. 기준 위치로 돌아간 뒤 방금보다 조금 덜 이동하세요."
+      : "보정 후 정상 자세로 돌아왔습니다. 같은 방향으로 조금 더 이동하세요.";
+  }
+
+  function cameraScenarioMagnitude(
+    label: ScenarioLabel["label"],
+    transform: CameraTransform | undefined,
+  ): number {
+    if (!transform) return 0;
+    switch (label) {
+      case "CAMERA_TRANSLATION_X": return Math.abs(transform.translationX);
+      case "CAMERA_TRANSLATION_Y": return Math.abs(transform.translationY);
+      case "CAMERA_ROLL": return Math.abs(transform.roll);
+      case "CAMERA_YAW_LEFT":
+      case "CAMERA_YAW_RIGHT": return Math.abs(transform.yawProxy ?? 0);
+      case "CAMERA_PITCH_UP":
+      case "CAMERA_PITCH_DOWN": return Math.abs(transform.pitchProxy ?? 0);
+      case "CAMERA_SCALE": return Math.abs(transform.scale);
+      default: return Math.max(
+        Math.abs(transform.translationX),
+        Math.abs(transform.translationY),
+        Math.abs(transform.scale),
+        Math.abs(transform.roll),
+      );
+    }
+  }
+
   function setManualControlsDisabled(disabled: boolean): void {
     scenarioSelect.disabled = disabled;
     scenarioStartedButton.disabled = disabled || !recorder.isRecording();
@@ -626,6 +870,7 @@ async function main() {
     scenarioEndedButton.disabled = disabled || !recorder.isRecording();
     automatedSessionButton.disabled = disabled || !profile;
     cameraSessionButton.disabled = disabled || !profile;
+    cameraBoundarySessionButton.disabled = disabled || !profile;
   }
 
   function processAutomatedSession(timestamp: number): void {
@@ -738,9 +983,22 @@ async function main() {
     cameraVerificationOutput.textContent = "camera verification running...";
     try {
       const entries = parseJSONL(await file.text());
-      const report = analyzeCameraVerificationSession(entries);
-      cameraVerificationOutput.textContent = [`file: ${file.name}`, formatCameraVerificationMetrics(report)].join("\n");
-      console.info("Camera verification", report);
+      const sessionType = entries.find((entry) => entry.metadata)?.metadata?.sessionType;
+      if (sessionType === "CAMERA_BOUNDARY") {
+        const report = analyzeCameraBoundarySession(entries);
+        cameraVerificationOutput.textContent = [
+          `파일: ${file.name}`,
+          formatCameraBoundaryMetrics(report),
+        ].join("\n");
+        console.info("Camera boundary verification", report);
+      } else {
+        const report = analyzeCameraVerificationSession(entries);
+        cameraVerificationOutput.textContent = [
+          `파일: ${file.name}`,
+          formatCameraVerificationMetrics(report),
+        ].join("\n");
+        console.info("Camera verification", report);
+      }
     } catch (error) {
       cameraVerificationOutput.textContent = `camera verification failed: ${String(error)}`;
     } finally {
@@ -782,18 +1040,7 @@ async function main() {
     }
 
     drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
-
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
-    const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);
-    previousFeature = feature;
-
-    if (!feature) {
-      movementClassifier.reset();
-      setAlertBanner(v0AlertBanner, "unknown", "V0: UNKNOWN");
-      setAlertBanner(v2AlertBanner, "unknown", "V2: UNKNOWN");
-      requestAnimationFrame(loop);
-      return;
-    }
 
     const cameraTransform = backgroundFeatureTracker.update(video, timestamp);
     const liveCameraAssessment = cameraAssessmentTracker.update(cameraTransform, timestamp);
@@ -801,7 +1048,9 @@ async function main() {
     if (
       previousCameraMotionPhase !== "STABLE" &&
       currentMotionPhase === "STABLE" &&
-      baselineVerificationFinalized
+      baselineVerificationFinalized &&
+      timestamp >= postMotionVerificationBlockedUntil &&
+      liveCameraAssessment.state !== "UNKNOWN"
     ) {
       startBaselineVerification(timestamp, "POST_MOTION");
     }
@@ -823,6 +1072,20 @@ async function main() {
           ? aggregateCameraTransforms(baselineVerificationTransforms)
           : null,
       );
+      if (
+        baselineVerificationKind === "POST_MOTION" &&
+        baselineVerificationTransforms.length === 0 &&
+        (liveCameraAssessment.episodeFrameCount ?? 0) > 0
+      ) {
+        baselineAssessment = {
+          ...baselineAssessment,
+          state: "RECALIBRATION_REQUIRED",
+          reason: ["calibration background no longer matches the current view"],
+          motionPhase: "STABLE",
+          episodeFrameCount: liveCameraAssessment.episodeFrameCount,
+          episodeUnknownFrameCount: liveCameraAssessment.episodeUnknownFrameCount,
+        };
+      }
       baselineVerificationFinalized = true;
       baselineVerificationUntil = 0;
     }
@@ -837,6 +1100,36 @@ async function main() {
       episodeFrameCount: liveCameraAssessment.episodeFrameCount,
       episodeUnknownFrameCount: liveCameraAssessment.episodeUnknownFrameCount,
     };
+
+    // Only an explicitly classified ADJUSTED camera state is safe to correct.
+    // UNKNOWN and RECALIBRATION_REQUIRED must not feed distorted landmarks
+    // into posture rules; the banners below pause those judgments instead.
+    const correctionTransform =
+      !calibrationFrames && cameraAssessment.state === "ADJUSTED"
+        ? cameraAssessment.transform
+        : undefined;
+    const correctedLandmarks = correctionTransform
+      ? applyCameraCorrectionToLandmarks(landmarks, correctionTransform)
+      : landmarks;
+    const correctedHands = correctionTransform
+      ? applyCameraCorrectionToHandLandmarks(handResult.landmarks, correctionTransform)
+      : handResult.landmarks;
+    const feature = toFrameFeature(
+      correctedLandmarks,
+      timestamp,
+      previousFeature,
+      correctedHands,
+    );
+    previousFeature = feature;
+
+    if (!feature) {
+      movementClassifier.reset();
+      setAlertBanner(v0AlertBanner, "unknown", "V0: UNKNOWN");
+      setAlertBanner(v2AlertBanner, "unknown", "V2: UNKNOWN");
+      requestAnimationFrame(loop);
+      return;
+    }
+
     const backgroundMotion = cameraTransform
       ? Math.hypot(cameraTransform.translationX, cameraTransform.translationY) +
         Math.abs(cameraTransform.scale) + Math.abs(cameraTransform.roll)
@@ -885,9 +1178,17 @@ async function main() {
           cameraAssessment.state,
           cameraAssessment.transform ?? cameraTransform,
           cameraAssessment,
+          event,
         );
       }
     }
+    processCameraBoundarySession(
+      timestamp,
+      currentMotionPhase,
+      cameraAssessment,
+      verificationActive,
+      event,
+    );
     latestEvent = event;
     latestV2Event = v2Event;
     const cameraStateKind = cameraAssessment.state === "RECALIBRATION_REQUIRED"
@@ -899,6 +1200,9 @@ async function main() {
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
       setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
+    } else if (cameraAssessment.state === "RECALIBRATION_REQUIRED") {
+      setAlertBanner(v0AlertBanner, "bad", "Camera recalibration required");
+      setAlertBanner(v2AlertBanner, "bad", "Camera recalibration required");
     } else if (
       verificationActive ||
       currentMotionPhase !== "STABLE" ||
@@ -924,7 +1228,9 @@ async function main() {
       const baselineReferenceStatus = verificationActive
         ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} active`
         : baselineAssessment
-          ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} complete`
+          ? baselineVerificationKind
+            ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} complete`
+            : "calibration ready"
           : backgroundReference
             ? "not started"
             : "unavailable";
@@ -945,6 +1251,8 @@ async function main() {
       `camera verification: ${cameraVerificationMode ? "ON" : "off"}`,
       cameraProfile ? "camera profile: saved" : "camera profile: not calibrated",
       `camera state: ${cameraAssessment.state}`,
+      `camera adjustment range: ${describeCameraAdjustmentRange(cameraAssessment.state)}`,
+      `camera correction: ${correctionTransform ? "active" : "inactive"}`,
       `camera motion phase: ${cameraAssessment.motionPhase ?? "STABLE"}`,
       (cameraAssessment.motionPhase ?? "STABLE") !== "STABLE"
         ? "camera judgment: PAUSED until movement settles"
@@ -968,7 +1276,9 @@ async function main() {
       verificationActive
         ? `baseline comparison: ${baselineVerificationKind?.toLowerCase() ?? "active"}`
         : baselineAssessment
-          ? `baseline comparison: ${baselineVerificationKind?.toLowerCase() ?? "complete"} complete`
+          ? baselineVerificationKind
+            ? `baseline comparison: ${baselineVerificationKind.toLowerCase()} complete`
+            : "baseline comparison: calibration ready"
           : "",
       cameraAssessment.reason?.length ? `reason: ${cameraAssessment.reason.join(", ")}` : "",
     ].filter((line) => line.length > 0).join("\n");
@@ -1073,6 +1383,12 @@ function formatScore(score: number | undefined): string {
   return score === undefined ? "?" : score.toFixed(2);
 }
 
+function describeCameraAdjustmentRange(state: CameraAssessment["state"]): string {
+  if (state === "VALID") return "no adjustment needed";
+  if (state === "ADJUSTED") return "correction available";
+  return "remeasurement required";
+}
+
 function aggregateCameraTransforms(transforms: readonly CameraTransform[]): CameraTransform {
   const latest = transforms[transforms.length - 1];
   return {
@@ -1083,6 +1399,16 @@ function aggregateCameraTransforms(transforms: readonly CameraTransform[]): Came
     roll: medianNumber(transforms.map((transform) => transform.roll)),
     yawProxy: medianNumber(transforms.map((transform) => transform.yawProxy ?? 0)),
     pitchProxy: medianNumber(transforms.map((transform) => transform.pitchProxy ?? 0)),
+    affine: latest.affine
+      ? {
+          a: medianNumber(transforms.map((transform) => transform.affine?.a ?? latest.affine!.a)),
+          b: medianNumber(transforms.map((transform) => transform.affine?.b ?? latest.affine!.b)),
+          c: medianNumber(transforms.map((transform) => transform.affine?.c ?? latest.affine!.c)),
+          d: medianNumber(transforms.map((transform) => transform.affine?.d ?? latest.affine!.d)),
+          e: medianNumber(transforms.map((transform) => transform.affine?.e ?? latest.affine!.e)),
+          f: medianNumber(transforms.map((transform) => transform.affine?.f ?? latest.affine!.f)),
+        }
+      : undefined,
     inlierRatio: medianNumber(transforms.map((transform) => transform.inlierRatio)),
     reprojectionError: medianNumber(transforms.map((transform) => transform.reprojectionError)),
     trackedPointCount: Math.round(medianNumber(transforms.map((transform) => transform.trackedPointCount))),

@@ -32,12 +32,12 @@ describe("CameraAssessmentTracker", () => {
     expect(tracker.update(null, 700).state).toBe("UNKNOWN");
   });
 
-  it("requires three consecutive changed frames", () => {
+  it("requires three consecutive changed frames before entering MOVING", () => {
     const tracker = new CameraAssessmentTracker();
     tracker.update(transform(), 0);
-    expect(tracker.update(transform({ translationX: 0.02 }), 100).motionPhase).toBe("MOVING");
-    expect(tracker.update(transform({ translationX: 0.02 }), 200).state).toBe("VALID");
-    expect(tracker.update(transform({ translationX: 0.02 }), 300).state).toBe("VALID");
+    expect(tracker.update(transform({ translationX: 0.05 }), 100).motionPhase).toBe("STABLE");
+    expect(tracker.update(transform({ translationX: 0.05 }), 200).motionPhase).toBe("STABLE");
+    expect(tracker.update(transform({ translationX: 0.05 }), 300).motionPhase).toBe("MOVING");
     expect(tracker.update(transform({ translationX: 0 }), 800).motionPhase).toBe("SETTLING");
     expect(tracker.update(transform({ translationX: 0 }), 1200).state).toBe("ADJUSTED");
   });
