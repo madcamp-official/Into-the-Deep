@@ -215,6 +215,7 @@ async function main() {
     { value: "TRANSIENT_ACTION", text: "Transient action" },
     { value: "FORWARD_LEAN", text: "Forward lean" },
     { value: "FORWARD_HEAD", text: "Forward head / turtle neck" },
+    { value: "HEAD_DOWN", text: "Head down" },
     { value: "LEFT_LEAN", text: "Left lean" },
     { value: "RIGHT_LEAN", text: "Right lean" },
     { value: "SIDE_SHIFT", text: "Side shift" },
@@ -1652,6 +1653,7 @@ function createMarkerButton(label: string, disabled: boolean): HTMLButtonElement
 function isDriftScenario(label: ScenarioLabel["label"]): boolean {
   return label === "FORWARD_LEAN" ||
     label === "FORWARD_HEAD" ||
+    label === "HEAD_DOWN" ||
     label === "LEFT_LEAN" ||
     label === "RIGHT_LEAN" ||
     label === "SIDE_SHIFT" ||
@@ -1702,6 +1704,7 @@ function scenarioName(label: ScenarioLabel["label"]): string {
   const names: Partial<Record<ScenarioLabel["label"], string>> = {
     FORWARD_LEAN: "앞으로 숙이는",
     FORWARD_HEAD: "거북목",
+    HEAD_DOWN: "고개를 숙이는",
     LEFT_LEAN: "왼쪽으로 기울이는",
     RIGHT_LEAN: "오른쪽으로 기울이는",
     SIDE_SHIFT: "좌우로 이동하는",

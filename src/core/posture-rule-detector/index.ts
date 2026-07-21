@@ -34,7 +34,11 @@ const DEFAULT_MOTION_SUSTAIN_MS = 250;
 // actually changed. Tolerate a brief no-match gap (holding the last known
 // match instead of clearing) and only treat it as a genuine return to
 // normal once the gap outlasts this window.
-const DEFAULT_NO_MATCH_GRACE_MS = 300;
+//
+// Raised 300 -> 800: a genuine bad-posture-to-normal transition should
+// require sustained non-matching too, not just long enough to bridge
+// single-frame jitter.
+const DEFAULT_NO_MATCH_GRACE_MS = 800;
 
 export interface PostureRuleDetectorOptions {
   rules?: readonly PostureRule[];

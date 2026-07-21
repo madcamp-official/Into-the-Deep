@@ -315,6 +315,7 @@ export interface ScenarioLabel {
     | "SETTLING"
     | "FORWARD_LEAN"
     | "FORWARD_HEAD"
+    | "HEAD_DOWN"
     | "LEFT_LEAN"
     | "RIGHT_LEAN"
     | "SIDE_SHIFT"

@@ -158,7 +158,7 @@ describe("toFrameFeature", () => {
 });
 
 describe("toFrameFeature smoothing", () => {
-  it("moves a smoothed value only SMOOTHING_ALPHA of the way toward a sudden raw jump", () => {
+  it("moves a smoothed value only partway toward a sudden raw jump, one ordinary frame later", () => {
     const before = createLandmarks();
     const after = createLandmarks({
       leftShoulder: point(0.4, 0.68, 1),
@@ -166,8 +166,11 @@ describe("toFrameFeature smoothing", () => {
     });
 
     const previous = toFrameFeature(before, 0);
-    const rawTarget = toFrameFeature(after, 1000); // no `previous` -> unsmoothed reading
-    const smoothed = toFrameFeature(after, 1000, previous);
+    // 33ms: a realistic single-frame gap at 30fps — the One Euro Filter's
+    // adaptive cutoff means the smoothing strength depends on dt, unlike
+    // the old fixed-alpha EMA this replaced.
+    const rawTarget = toFrameFeature(after, 33); // no `previous` -> unsmoothed reading
+    const smoothed = toFrameFeature(after, 33, previous);
 
     expect(previous).not.toBeNull();
     expect(rawTarget).not.toBeNull();
@@ -177,9 +180,9 @@ describe("toFrameFeature smoothing", () => {
     // Raw reading really did change (otherwise this test would prove nothing).
     expect(rawTarget.shoulderTilt).not.toBeCloseTo(previous.shoulderTilt, 5);
 
-    const expected = previous.shoulderTilt + 0.3 * (rawTarget.shoulderTilt - previous.shoulderTilt);
-    expect(smoothed.shoulderTilt).toBeCloseTo(expected, 10);
     // Landed strictly between the old and new raw values, not at either end.
+    expect(smoothed.shoulderTilt).toBeGreaterThan(Math.min(previous.shoulderTilt, rawTarget.shoulderTilt));
+    expect(smoothed.shoulderTilt).toBeLessThan(Math.max(previous.shoulderTilt, rawTarget.shoulderTilt));
     expect(smoothed.shoulderTilt).not.toBeCloseTo(previous.shoulderTilt, 3);
     expect(smoothed.shoulderTilt).not.toBeCloseTo(rawTarget.shoulderTilt, 3);
   });
