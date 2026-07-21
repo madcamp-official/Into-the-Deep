@@ -26,6 +26,7 @@ const DEFAULT_OPTIONS: Required<BackgroundFeatureTrackerOptions> = {
   searchRadius: 18,
   minMatchScore: 0.82,
 };
+const MIN_CONFIDENT_TRACKED_POINTS = 8;
 
 // Tracks small background patches at several fixed locations. Unlike a single
 // brightness sample, matching preserves direction and supports a robust
@@ -99,12 +100,7 @@ export class BackgroundFeatureTracker {
     });
     if (matches.length < 4) return null;
     const estimate = estimateTransform(matches);
-    const confidence = clamp(
-      (matches.length / points.length) * estimate.inlierRatio *
-        (1 - Math.min(estimate.reprojectionError / 12, 1)),
-      0,
-      1,
-    );
+    const confidence = estimateTrackingConfidence(matches.length, estimate.inlierRatio, estimate.reprojectionError);
     return {
       timestamp,
       ...estimate,
@@ -143,12 +139,7 @@ export class BackgroundFeatureTracker {
 
     if (matches.length < 4) return null;
     const transform = estimateTransform(matches);
-    const confidence = clamp(
-      (matches.length / points.length) * transform.inlierRatio *
-        (1 - Math.min(transform.reprojectionError / 12, 1)),
-      0,
-      1,
-    );
+    const confidence = estimateTrackingConfidence(matches.length, transform.inlierRatio, transform.reprojectionError);
     const frameTransform: CameraTransform = {
       timestamp,
       ...transform,
@@ -172,11 +163,10 @@ export class BackgroundFeatureTracker {
         .filter((match): match is { from: Point; to: Point; score: number } => match !== null);
       if (anchorMatches.length >= 4) {
         const anchorEstimate = estimateTransform(anchorMatches);
-        const anchorConfidence = clamp(
-          (anchorMatches.length / this.anchorPoints.length) * anchorEstimate.inlierRatio *
-            (1 - Math.min(anchorEstimate.reprojectionError / 12, 1)),
-          0,
-          1,
+        const anchorConfidence = estimateTrackingConfidence(
+          anchorMatches.length,
+          anchorEstimate.inlierRatio,
+          anchorEstimate.reprojectionError,
         );
         keyframeTransform = {
           ...anchorEstimate,
@@ -425,4 +415,21 @@ function distance(left: Point, right: Point): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function estimateTrackingConfidence(
+  trackedPointCount: number,
+  inlierRatio: number,
+  reprojectionError: number,
+): number {
+  // Eight well-distributed points are enough for our affine model. Do not
+  // penalize confidence merely because additional perimeter points were
+  // temporarily occluded; inlier quality and reprojection error remain the
+  // stronger reliability signals.
+  const coverage = Math.min(1, trackedPointCount / MIN_CONFIDENT_TRACKED_POINTS);
+  return clamp(
+    coverage * inlierRatio * (1 - Math.min(reprojectionError / 12, 1)),
+    0,
+    1,
+  );
 }

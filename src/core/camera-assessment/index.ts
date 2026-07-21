@@ -67,6 +67,9 @@ const MOTION_ONSET_THRESHOLD = 0.02;
 const MOTION_END_THRESHOLD = 0.01;
 const SETTLING_DELAY_MS = 450;
 const REQUIRED_MOTION_ONSET_FRAMES = 3;
+const SLOW_MOTION_FRAME_THRESHOLD = 0.003;
+const SLOW_MOTION_ACCUMULATION_THRESHOLD = 0.025;
+const REQUIRED_SLOW_MOTION_FRAMES = 5;
 
 // Keeps short tracking gaps from becoming camera-change alerts. A prolonged
 // gap remains UNKNOWN so the UI can ask the user to check the camera.
@@ -76,6 +79,8 @@ export class CameraAssessmentTracker {
   private candidateState: CameraAssessment["state"] | null = null;
   private candidateCount = 0;
   private motionCandidateCount = 0;
+  private slowMotionAccumulated = 0;
+  private slowMotionFrames = 0;
   private motionPhase: NonNullable<CameraAssessment["motionPhase"]> = "STABLE";
   private lastMotionAt = 0;
   private episodeFrameCount = 0;
@@ -88,6 +93,8 @@ export class CameraAssessmentTracker {
     this.candidateState = null;
     this.candidateCount = 0;
     this.motionCandidateCount = 0;
+    this.slowMotionAccumulated = 0;
+    this.slowMotionFrames = 0;
     this.motionPhase = "STABLE";
     this.lastMotionAt = 0;
     this.episodeFrameCount = 0;
@@ -106,9 +113,19 @@ export class CameraAssessmentTracker {
         Math.abs(transform.pitchProxy ?? 0)
       : 0;
     let episodeFinished = false;
+    const slowMotionEvidence = reliable && motionMagnitude >= SLOW_MOTION_FRAME_THRESHOLD;
+    if (slowMotionEvidence) {
+      this.slowMotionAccumulated += motionMagnitude;
+      this.slowMotionFrames += 1;
+    } else if (reliable) {
+      this.slowMotionAccumulated *= 0.5;
+      this.slowMotionFrames = 0;
+    }
+    const sustainedSlowMotion = this.slowMotionFrames >= REQUIRED_SLOW_MOTION_FRAMES &&
+      this.slowMotionAccumulated >= SLOW_MOTION_ACCUMULATION_THRESHOLD;
 
     if (this.motionPhase === "STABLE") {
-      if (reliable && motionMagnitude >= MOTION_ONSET_THRESHOLD) {
+      if (reliable && (motionMagnitude >= MOTION_ONSET_THRESHOLD || sustainedSlowMotion)) {
         this.motionCandidateCount += 1;
         if (this.motionCandidateCount >= REQUIRED_MOTION_ONSET_FRAMES) {
           this.motionPhase = "MOVING";
@@ -117,12 +134,14 @@ export class CameraAssessmentTracker {
           this.episodeUnknownFrameCount = 0;
           this.episodeTransforms = [];
           this.motionCandidateCount = 0;
+          this.slowMotionAccumulated = 0;
+          this.slowMotionFrames = 0;
         }
       } else {
         this.motionCandidateCount = 0;
       }
     } else {
-      if (motionMagnitude >= MOTION_END_THRESHOLD) {
+      if (motionMagnitude >= MOTION_END_THRESHOLD || sustainedSlowMotion) {
         this.motionPhase = "MOVING";
         this.lastMotionAt = timestamp;
       } else if (timestamp - this.lastMotionAt >= SETTLING_DELAY_MS) {

@@ -41,4 +41,16 @@ describe("CameraAssessmentTracker", () => {
     expect(tracker.update(transform({ translationX: 0 }), 800).motionPhase).toBe("SETTLING");
     expect(tracker.update(transform({ translationX: 0 }), 1200).state).toBe("ADJUSTED");
   });
+
+  it("detects a slow camera movement from accumulated small changes", () => {
+    const tracker = new CameraAssessmentTracker();
+    tracker.update(transform(), 0);
+
+    for (let index = 1; index <= 6; index += 1) {
+      const result = tracker.update(transform({ translationX: 0.005 }), index * 100);
+      if (index < 6) expect(result.motionPhase).not.toBe("MOVING");
+    }
+
+    expect(tracker.update(transform({ translationX: 0.005 }), 700).motionPhase).toBe("MOVING");
+  });
 });
