@@ -36,7 +36,7 @@ import {
   analyzeCameraVerificationSession,
   formatCameraVerificationMetrics,
 } from "../../evaluation/camera-verification";
-import { CameraAssessmentTracker } from "../../core/camera-assessment";
+import { assessCameraTransform, CameraAssessmentTracker } from "../../core/camera-assessment";
 import {
   getNextDevelopmentStep,
   CAMERA_DEVELOPMENT_SESSION,
@@ -51,6 +51,8 @@ import { SessionAudioNotifier } from "../session-audio";
 import type {
   CameraProfile,
   CameraRawFeature,
+  CameraAssessment,
+  CameraTransform,
   DetectionEvent,
   FrameFeature,
   MADProfile,
@@ -277,7 +279,12 @@ async function main() {
   let developmentAnalysisSummary = "";
   let cameraVerificationMode = false;
   let backgroundReference: BackgroundReference | undefined;
-  let startupReferenceCheckUntil = 0;
+  let baselineVerificationUntil = 0;
+  let baselineVerificationKind: "STARTUP" | "POST_MOTION" | null = null;
+  let baselineVerificationTransforms: CameraTransform[] = [];
+  let baselineAssessment: CameraAssessment | null = null;
+  let baselineVerificationFinalized = false;
+  let previousCameraMotionPhase: "STABLE" | "MOVING" | "SETTLING" = "STABLE";
   let latestEvent: DetectionEvent | null = null;
   let latestV2Event: DetectionEvent | null = null;
   let captureCount = 0;
@@ -296,7 +303,7 @@ async function main() {
       profileCreatedAt = storedProfiles.lastCalibrationAt;
       backgroundReference = storedProfiles.backgroundReference;
       backgroundFeatureTracker.setReference(backgroundReference);
-      startupReferenceCheckUntil = performance.now() + 3000;
+      startBaselineVerification(performance.now(), "STARTUP");
       calibrationMessage = "saved profile restored";
     }
   } catch (error) {
@@ -309,10 +316,28 @@ async function main() {
     movementClassifier.reset();
     backgroundFeatureTracker.reset();
     cameraAssessmentTracker.reset();
+    baselineVerificationUntil = 0;
+    baselineVerificationKind = null;
+    baselineVerificationTransforms = [];
+    baselineAssessment = null;
+    baselineVerificationFinalized = false;
+    previousCameraMotionPhase = "STABLE";
     calibrationDeadline = performance.now() + CALIBRATION_DURATION_MS;
     calibrationMessage = "";
     calibrateButton.disabled = true;
     updateBaselineButton.disabled = true;
+  }
+
+  function startBaselineVerification(
+    timestamp: number,
+    kind: "STARTUP" | "POST_MOTION",
+  ): void {
+    if (!backgroundReference) return;
+    baselineVerificationUntil = timestamp + 3000;
+    baselineVerificationKind = kind;
+    baselineVerificationTransforms = [];
+    baselineAssessment = null;
+    baselineVerificationFinalized = false;
   }
 
   async function finishCalibration(
@@ -443,7 +468,7 @@ async function main() {
   modeButton.onclick = () => {
     cameraVerificationMode = !cameraVerificationMode;
     sidePanel.classList.toggle("camera-verification-mode", cameraVerificationMode);
-    alertBannerRow.hidden = cameraVerificationMode;
+    alertBannerRow.hidden = false;
     modeButton.textContent = cameraVerificationMode
       ? "Posture Mode"
       : "Camera Verification Mode";
@@ -759,11 +784,47 @@ async function main() {
     }
 
     const cameraTransform = backgroundFeatureTracker.update(video, timestamp);
-    const startupTransform = timestamp <= startupReferenceCheckUntil
+    const liveCameraAssessment = cameraAssessmentTracker.update(cameraTransform, timestamp);
+    const currentMotionPhase = liveCameraAssessment.motionPhase ?? "STABLE";
+    if (
+      previousCameraMotionPhase !== "STABLE" &&
+      currentMotionPhase === "STABLE" &&
+      baselineVerificationFinalized
+    ) {
+      startBaselineVerification(timestamp, "POST_MOTION");
+    }
+    previousCameraMotionPhase = currentMotionPhase;
+
+    const verificationActive = baselineVerificationUntil > 0 &&
+      timestamp <= baselineVerificationUntil;
+    const referenceTransform = verificationActive
       ? backgroundFeatureTracker.compareReference(video, timestamp)
       : null;
-    const environmentTransform = startupTransform ?? cameraTransform;
-    const cameraAssessment = cameraAssessmentTracker.update(environmentTransform, timestamp);
+    if (referenceTransform) baselineVerificationTransforms.push(referenceTransform);
+    if (
+      baselineVerificationUntil > 0 &&
+      !baselineVerificationFinalized &&
+      timestamp > baselineVerificationUntil
+    ) {
+      baselineAssessment = assessCameraTransform(
+        baselineVerificationTransforms.length > 0
+          ? aggregateCameraTransforms(baselineVerificationTransforms)
+          : null,
+      );
+      baselineVerificationFinalized = true;
+      baselineVerificationUntil = 0;
+    }
+
+    const referenceAssessment = referenceTransform
+      ? assessCameraTransform(referenceTransform)
+      : null;
+    const selectedAssessment = baselineAssessment ?? referenceAssessment ?? liveCameraAssessment;
+    const cameraAssessment: CameraAssessment = {
+      ...selectedAssessment,
+      motionPhase: currentMotionPhase,
+      episodeFrameCount: liveCameraAssessment.episodeFrameCount,
+      episodeUnknownFrameCount: liveCameraAssessment.episodeUnknownFrameCount,
+    };
     const backgroundMotion = cameraTransform
       ? Math.hypot(cameraTransform.translationX, cameraTransform.translationY) +
         Math.abs(cameraTransform.scale) + Math.abs(cameraTransform.roll)
@@ -810,18 +871,27 @@ async function main() {
           feature,
           scenarioLabeler.getCurrentLabel(),
           cameraAssessment.state,
-          cameraTransform,
+          cameraAssessment.transform ?? cameraTransform,
           cameraAssessment,
         );
       }
     }
     latestEvent = event;
     latestV2Event = v2Event;
+    const cameraStateKind = cameraAssessment.state === "RECALIBRATION_REQUIRED"
+      ? "bad"
+      : cameraAssessment.state === "UNKNOWN"
+        ? "unknown"
+        : "good";
 
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
       setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
-    } else if (currentSessionType === "CAMERA" && cameraAssessment.motionPhase !== "STABLE") {
+    } else if (
+      verificationActive ||
+      currentMotionPhase !== "STABLE" ||
+      cameraAssessment.state === "UNKNOWN"
+    ) {
       setAlertBanner(v0AlertBanner, "idle", "Camera movement: posture judgment paused");
       setAlertBanner(v2AlertBanner, "idle", "Camera movement: posture judgment paused");
     } else if (!cameraVerificationMode) {
@@ -838,35 +908,56 @@ async function main() {
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
+    } else {
+      const baselineReferenceStatus = verificationActive
+        ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} active`
+        : baselineAssessment
+          ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} complete`
+          : backgroundReference
+            ? "not started"
+            : "unavailable";
+      setAlertBanner(
+        v0AlertBanner,
+        "idle",
+        `Camera baseline verification: ${baselineReferenceStatus}`,
+      );
+      setAlertBanner(
+        v2AlertBanner,
+        cameraStateKind,
+        `Camera state: ${cameraAssessment.state} (${cameraAssessment.motionPhase ?? "STABLE"})`,
+      );
     }
 
+    const displayedCameraTransform = baselineAssessment?.transform ?? referenceTransform ?? cameraTransform;
     const cameraStatus = [
       `camera verification: ${cameraVerificationMode ? "ON" : "off"}`,
       cameraProfile ? "camera profile: saved" : "camera profile: not calibrated",
       `camera state: ${cameraAssessment.state}`,
       `camera motion phase: ${cameraAssessment.motionPhase ?? "STABLE"}`,
-      cameraAssessment.motionPhase !== "STABLE"
+      (cameraAssessment.motionPhase ?? "STABLE") !== "STABLE"
         ? "camera judgment: PAUSED until movement settles"
         : "camera judgment: active",
       cameraAssessment.episodeFrameCount !== undefined
         ? `episode frames: ${cameraAssessment.episodeFrameCount} (unknown ${cameraAssessment.episodeUnknownFrameCount ?? 0})`
         : "",
       `camera reliability: ${cameraAssessment.reliability.toFixed(2)}`,
-      cameraTransform ? `background points: ${cameraTransform.trackedPointCount}` : "background points: waiting",
-      cameraTransform ? `inlier ratio: ${cameraTransform.inlierRatio.toFixed(2)}` : "",
-      cameraTransform ? `reprojection error: ${cameraTransform.reprojectionError.toFixed(2)}px` : "",
-      cameraTransform ? `translation: x=${cameraTransform.translationX.toFixed(3)}, y=${cameraTransform.translationY.toFixed(3)}` : "",
-      cameraTransform ? `scale delta: ${(cameraTransform.scale * 100).toFixed(1)}%` : "",
-      cameraTransform ? `roll: ${(cameraTransform.roll * 180 / Math.PI).toFixed(1)}deg` : "",
-      cameraTransform?.yawProxy !== undefined ? `yaw proxy: ${cameraTransform.yawProxy.toFixed(4)}` : "",
-      cameraTransform?.pitchProxy !== undefined ? `pitch proxy: ${cameraTransform.pitchProxy.toFixed(4)}` : "",
+      displayedCameraTransform ? `background points: ${displayedCameraTransform.trackedPointCount}` : "background points: waiting",
+      displayedCameraTransform ? `inlier ratio: ${displayedCameraTransform.inlierRatio.toFixed(2)}` : "",
+      displayedCameraTransform ? `reprojection error: ${displayedCameraTransform.reprojectionError.toFixed(2)}px` : "",
+      displayedCameraTransform ? `translation: x=${displayedCameraTransform.translationX.toFixed(3)}, y=${displayedCameraTransform.translationY.toFixed(3)}` : "",
+      displayedCameraTransform ? `scale delta: ${(displayedCameraTransform.scale * 100).toFixed(1)}%` : "",
+      displayedCameraTransform ? `roll: ${(displayedCameraTransform.roll * 180 / Math.PI).toFixed(1)}deg` : "",
+      displayedCameraTransform?.yawProxy !== undefined ? `yaw proxy: ${displayedCameraTransform.yawProxy.toFixed(4)}` : "",
+      displayedCameraTransform?.pitchProxy !== undefined ? `pitch proxy: ${displayedCameraTransform.pitchProxy.toFixed(4)}` : "",
       `keyframe tracking: ${cameraTransform?.keyframeTransform ? "active" : "waiting"}`,
       cameraTransform?.keyframeTransform
         ? `keyframe delta: x=${cameraTransform.keyframeTransform.translationX.toFixed(3)}, y=${cameraTransform.keyframeTransform.translationY.toFixed(3)}, scale=${(cameraTransform.keyframeTransform.scale * 100).toFixed(1)}%`
         : "",
-      startupReferenceCheckUntil > timestamp
-        ? `startup reference comparison: ${startupTransform ? "active" : "waiting"}`
-        : "",
+      verificationActive
+        ? `baseline comparison: ${baselineVerificationKind?.toLowerCase() ?? "active"}`
+        : baselineAssessment
+          ? `baseline comparison: ${baselineVerificationKind?.toLowerCase() ?? "complete"} complete`
+          : "",
       cameraAssessment.reason?.length ? `reason: ${cameraAssessment.reason.join(", ")}` : "",
     ].filter((line) => line.length > 0).join("\n");
     const postureStatus = [
@@ -968,6 +1059,29 @@ async function main() {
 
 function formatScore(score: number | undefined): string {
   return score === undefined ? "?" : score.toFixed(2);
+}
+
+function aggregateCameraTransforms(transforms: readonly CameraTransform[]): CameraTransform {
+  const latest = transforms[transforms.length - 1];
+  return {
+    timestamp: latest.timestamp,
+    translationX: medianNumber(transforms.map((transform) => transform.translationX)),
+    translationY: medianNumber(transforms.map((transform) => transform.translationY)),
+    scale: medianNumber(transforms.map((transform) => transform.scale)),
+    roll: medianNumber(transforms.map((transform) => transform.roll)),
+    yawProxy: medianNumber(transforms.map((transform) => transform.yawProxy ?? 0)),
+    pitchProxy: medianNumber(transforms.map((transform) => transform.pitchProxy ?? 0)),
+    inlierRatio: medianNumber(transforms.map((transform) => transform.inlierRatio)),
+    reprojectionError: medianNumber(transforms.map((transform) => transform.reprojectionError)),
+    trackedPointCount: Math.round(medianNumber(transforms.map((transform) => transform.trackedPointCount))),
+    confidence: medianNumber(transforms.map((transform) => transform.confidence)),
+    source: "BACKGROUND_FEATURES",
+  };
+}
+
+function medianNumber(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
 // Lists every numeric FrameFeature value at capture time, alongside the

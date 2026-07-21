@@ -22,7 +22,7 @@ export interface BackgroundReference {
 const DEFAULT_OPTIONS: Required<BackgroundFeatureTrackerOptions> = {
   width: 320,
   height: 180,
-  patchRadius: 3,
+  patchRadius: 4,
   searchRadius: 18,
   minMatchScore: 0.82,
 };
@@ -57,7 +57,6 @@ export class BackgroundFeatureTracker {
     this.anchor = null;
     this.anchorPoints = [];
     this.anchorLastMotionAt = 0;
-    this.reference = null;
   }
 
   captureReference(): BackgroundReference | null {
@@ -84,9 +83,20 @@ export class BackgroundFeatureTracker {
     const image = this.context.getImageData(0, 0, this.options.width, this.options.height);
     const current = toGray(image.data);
     const points = createPoints(this.options.width, this.options.height);
-    const matches = points
-      .map((point) => matchPatch(this.reference!, current, point, this.options))
+    // A camera that was repositioned while the page was closed can move a
+    // background patch much farther than a one-frame motion. Startup-only
+    // comparison can afford a wider search because it runs for a few seconds.
+    const referenceOptions = {
+      ...this.options,
+      searchRadius: Math.max(this.options.searchRadius, 48),
+    };
+    const forwardMatches = points
+      .map((point) => matchPatch(this.reference!, current, point, referenceOptions))
       .filter((match): match is { from: Point; to: Point; score: number } => match !== null);
+    const matches = forwardMatches.filter((match) => {
+      const reverse = matchPatch(current, this.reference!, match.to, referenceOptions);
+      return reverse !== null && distance(reverse.to, match.from) <= 4;
+    });
     if (matches.length < 4) return null;
     const estimate = estimateTransform(matches);
     const confidence = clamp(
@@ -273,41 +283,29 @@ function patchScore(left: number[], right: number[]): number {
 }
 
 function estimateTransform(matches: Array<{ from: Point; to: Point; score: number }>): Omit<CameraTransform, "timestamp" | "trackedPointCount" | "confidence" | "source"> {
-  const dx = median(matches.map((match) => match.to.x - match.from.x));
-  const dy = median(matches.map((match) => match.to.y - match.from.y));
+  const consensus = findAffineConsensus(matches);
+  const model = fitAffine(consensus.length >= 4 ? consensus : matches);
   const center = {
     x: median(matches.map((match) => match.from.x)),
     y: median(matches.map((match) => match.from.y)),
   };
-  const scales = matches.map((match) => {
-    const before = distance(match.from, center);
-    const after = distance(match.to, { x: center.x + dx, y: center.y + dy });
-    return before > 1 ? after / before : 1;
-  });
-  const rolls = matches.map((match) => {
-    const before = Math.atan2(match.from.y - center.y, match.from.x - center.x);
-    const after = Math.atan2(match.to.y - center.y - dy, match.to.x - center.x - dx);
-    return normalizeAngle(after - before);
-  });
-  const scale = median(scales);
-  const roll = median(rolls);
-  const horizontalDisplacements = matches.map((match) => match.to.x - match.from.x - dx);
-  const verticalDisplacements = matches.map((match) => match.to.y - match.from.y - dy);
-  const yawProxy = linearSlope(matches.map((match) => match.from.x), horizontalDisplacements) / 320;
-  const pitchProxy = linearSlope(matches.map((match) => match.from.y), verticalDisplacements) / 180;
-  const errors = matches.map((match) => {
-    const predicted = {
-      x: center.x + dx + (match.from.x - center.x) * scale,
-      y: center.y + dy + (match.from.y - center.y) * scale,
-    };
-    return distance(predicted, match.to);
-  });
-  const error = median(errors);
-  const inlierRatio = errors.filter((value) => value <= Math.max(4, error * 2)).length / matches.length;
+  const predictedCenter = applyAffine(model, center);
+  const translationX = (predictedCenter.x - center.x) / 320;
+  const translationY = (predictedCenter.y - center.y) / 180;
+  const determinant = model.a * model.e - model.b * model.d;
+  const scale = Math.sqrt(Math.abs(determinant)) - 1;
+  const roll = Math.atan2(model.d - model.b, model.a + model.e);
+  const yawProxy = (model.a - 1) / 320;
+  const pitchProxy = (model.e - 1) / 180;
+  const errors = matches.map((match) => distance(applyAffine(model, match.from), match.to));
+  const inlierThreshold = 6;
+  const inliers = errors.filter((value) => value <= inlierThreshold);
+  const error = median(inliers.length >= 4 ? inliers : errors);
+  const inlierRatio = inliers.length / matches.length;
   return {
-    translationX: dx / 320,
-    translationY: dy / 180,
-    scale: scale - 1,
+    translationX,
+    translationY,
+    scale,
     roll,
     yawProxy,
     pitchProxy,
@@ -316,17 +314,94 @@ function estimateTransform(matches: Array<{ from: Point; to: Point; score: numbe
   };
 }
 
-function linearSlope(values: number[], outputs: number[]): number {
-  const meanValue = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const meanOutput = outputs.reduce((sum, value) => sum + value, 0) / outputs.length;
-  let numerator = 0;
-  let denominator = 0;
-  for (let index = 0; index < values.length; index += 1) {
-    const valueDelta = values[index] - meanValue;
-    numerator += valueDelta * (outputs[index] - meanOutput);
-    denominator += valueDelta * valueDelta;
+function findAffineConsensus(matches: Array<{ from: Point; to: Point; score: number }>): Array<{ from: Point; to: Point; score: number }> {
+  if (matches.length <= 3) return matches;
+  let best: Array<{ from: Point; to: Point; score: number }> = [];
+  let bestError = Number.POSITIVE_INFINITY;
+  for (let first = 0; first < matches.length - 2; first += 1) {
+    for (let second = first + 1; second < matches.length - 1; second += 1) {
+      for (let third = second + 1; third < matches.length; third += 1) {
+        const candidate = [matches[first], matches[second], matches[third]];
+        const model = fitAffine(candidate);
+        const inliers = matches.filter(
+          (match) => distance(applyAffine(model, match.from), match.to) <= 6,
+        );
+        const candidateError = inliers.length > 0
+          ? median(inliers.map((match) => distance(applyAffine(model, match.from), match.to)))
+          : Number.POSITIVE_INFINITY;
+        if (inliers.length > best.length ||
+            (inliers.length === best.length && candidateError < bestError)) {
+          best = inliers;
+          bestError = candidateError;
+        }
+      }
+    }
   }
-  return denominator > 0 ? numerator / denominator : 0;
+  return best;
+}
+
+interface AffineModel {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+
+function fitAffine(matches: Array<{ from: Point; to: Point; score: number }>): AffineModel {
+  const normal = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const rightX = [0, 0, 0];
+  const rightY = [0, 0, 0];
+  for (const match of matches) {
+    const row = [match.from.x, match.from.y, 1];
+    for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < 3; columnIndex += 1) {
+        normal[rowIndex][columnIndex] += row[rowIndex] * row[columnIndex];
+      }
+      rightX[rowIndex] += row[rowIndex] * match.to.x;
+      rightY[rowIndex] += row[rowIndex] * match.to.y;
+    }
+  }
+  const x = solve3x3(normal, rightX);
+  const y = solve3x3(normal, rightY);
+  if (!x || !y) {
+    return { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
+  }
+  return { a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2] };
+}
+
+function solve3x3(matrix: number[][], values: number[]): [number, number, number] | null {
+  const augmented = matrix.map((row, index) => [...row, values[index]]);
+  for (let pivot = 0; pivot < 3; pivot += 1) {
+    let bestRow = pivot;
+    for (let row = pivot + 1; row < 3; row += 1) {
+      if (Math.abs(augmented[row][pivot]) > Math.abs(augmented[bestRow][pivot])) bestRow = row;
+    }
+    if (Math.abs(augmented[bestRow][pivot]) < 1e-8) return null;
+    [augmented[pivot], augmented[bestRow]] = [augmented[bestRow], augmented[pivot]];
+    const divisor = augmented[pivot][pivot];
+    for (let column = pivot; column < 4; column += 1) augmented[pivot][column] /= divisor;
+    for (let row = 0; row < 3; row += 1) {
+      if (row === pivot) continue;
+      const factor = augmented[row][pivot];
+      for (let column = pivot; column < 4; column += 1) {
+        augmented[row][column] -= factor * augmented[pivot][column];
+      }
+    }
+  }
+  return [augmented[0][3], augmented[1][3], augmented[2][3]];
+}
+
+function applyAffine(model: AffineModel, point: Point): Point {
+  return {
+    x: model.a * point.x + model.b * point.y + model.c,
+    y: model.d * point.x + model.e * point.y + model.f,
+  };
 }
 
 function median(values: number[]): number {
@@ -336,10 +411,6 @@ function median(values: number[]): number {
 
 function distance(left: Point, right: Point): number {
   return Math.hypot(left.x - right.x, left.y - right.y);
-}
-
-function normalizeAngle(value: number): number {
-  return Math.atan2(Math.sin(value), Math.cos(value));
 }
 
 function clamp(value: number, min: number, max: number): number {

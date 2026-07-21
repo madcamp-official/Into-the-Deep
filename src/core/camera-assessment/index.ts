@@ -3,9 +3,13 @@ import type { CameraAssessment, CameraTransform } from "../types";
 const ADJUSTED_TRANSLATION = 0.035;
 const ADJUSTED_SCALE = 0.06;
 const ADJUSTED_ROLL = 0.05;
+const ADJUSTED_YAW = 0.02;
+const ADJUSTED_PITCH = 0.02;
 const RECALIBRATION_TRANSLATION = 0.14;
 const RECALIBRATION_SCALE = 0.2;
 const RECALIBRATION_ROLL = 0.2;
+const RECALIBRATION_YAW = 0.08;
+const RECALIBRATION_PITCH = 0.08;
 
 export function assessCameraTransform(
   transform: CameraTransform | null,
@@ -24,18 +28,24 @@ export function assessCameraTransform(
 
   const reliable = transform.trackedPointCount >= 6 && transform.confidence >= 0.45;
   const translation = Math.hypot(transform.translationX, transform.translationY);
-  const changed = translation > ADJUSTED_TRANSLATION ||
-    Math.abs(transform.scale) > ADJUSTED_SCALE ||
-    Math.abs(transform.roll) > ADJUSTED_ROLL;
   const recalibration = translation > RECALIBRATION_TRANSLATION ||
     Math.abs(transform.scale) > RECALIBRATION_SCALE ||
-    Math.abs(transform.roll) > RECALIBRATION_ROLL;
+    Math.abs(transform.roll) > RECALIBRATION_ROLL ||
+    Math.abs(transform.yawProxy ?? 0) > RECALIBRATION_YAW ||
+    Math.abs(transform.pitchProxy ?? 0) > RECALIBRATION_PITCH;
+  const changed = translation > ADJUSTED_TRANSLATION ||
+    Math.abs(transform.scale) > ADJUSTED_SCALE ||
+    Math.abs(transform.roll) > ADJUSTED_ROLL ||
+    Math.abs(transform.yawProxy ?? 0) > ADJUSTED_YAW ||
+    Math.abs(transform.pitchProxy ?? 0) > ADJUSTED_PITCH;
   const reason: string[] = [];
   if (!reliable) reason.push("background tracking confidence is low");
   if (Math.abs(transform.translationX) > ADJUSTED_TRANSLATION) reason.push("camera translation X changed");
   if (Math.abs(transform.translationY) > ADJUSTED_TRANSLATION) reason.push("camera translation Y changed");
   if (Math.abs(transform.scale) > ADJUSTED_SCALE) reason.push("camera distance/zoom changed");
   if (Math.abs(transform.roll) > ADJUSTED_ROLL) reason.push("camera roll changed");
+  if (Math.abs(transform.yawProxy ?? 0) > ADJUSTED_YAW) reason.push("camera yaw changed");
+  if (Math.abs(transform.pitchProxy ?? 0) > ADJUSTED_PITCH) reason.push("camera pitch changed");
 
   return {
     timestamp: transform.timestamp,
