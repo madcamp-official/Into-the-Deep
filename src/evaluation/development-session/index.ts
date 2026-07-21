@@ -3,6 +3,7 @@ import type { ScenarioLabel } from "../../core/types";
 export type DevelopmentSessionAction =
   | "SCENARIO_STARTED"
   | "DRIFT_ONSET"
+  | "CHANGE_ONSET"
   | "SCENARIO_ENDED"
   | "SESSION_ENDED";
 
@@ -14,11 +15,34 @@ export interface DevelopmentSessionStep {
 
 export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
-  { atSeconds: 20, action: "SCENARIO_STARTED", label: "CAMERA_CHANGE" },
-  { atSeconds: 35, action: "SCENARIO_ENDED", label: "CAMERA_CHANGE" },
-  { atSeconds: 45, action: "SCENARIO_STARTED", label: "CAMERA_CHANGE" },
-  { atSeconds: 60, action: "SCENARIO_ENDED", label: "CAMERA_CHANGE" },
-  { atSeconds: 70, action: "SESSION_ENDED" },
+  { atSeconds: 10, action: "SCENARIO_STARTED", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 25, action: "CHANGE_ONSET", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 35, action: "SCENARIO_ENDED", label: "CAMERA_TRANSLATION_X" },
+  { atSeconds: 45, action: "SCENARIO_STARTED", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 60, action: "CHANGE_ONSET", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 70, action: "SCENARIO_ENDED", label: "CAMERA_TRANSLATION_Y" },
+  { atSeconds: 80, action: "SCENARIO_STARTED", label: "CAMERA_ROLL" },
+  { atSeconds: 95, action: "CHANGE_ONSET", label: "CAMERA_ROLL" },
+  { atSeconds: 105, action: "SCENARIO_ENDED", label: "CAMERA_ROLL" },
+  { atSeconds: 115, action: "SCENARIO_STARTED", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 130, action: "CHANGE_ONSET", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 140, action: "SCENARIO_ENDED", label: "CAMERA_YAW_LEFT" },
+  { atSeconds: 150, action: "SCENARIO_STARTED", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 165, action: "CHANGE_ONSET", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 175, action: "SCENARIO_ENDED", label: "CAMERA_YAW_RIGHT" },
+  { atSeconds: 185, action: "SCENARIO_STARTED", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 200, action: "CHANGE_ONSET", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 210, action: "SCENARIO_ENDED", label: "CAMERA_PITCH_UP" },
+  { atSeconds: 220, action: "SCENARIO_STARTED", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 235, action: "CHANGE_ONSET", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 245, action: "SCENARIO_ENDED", label: "CAMERA_PITCH_DOWN" },
+  { atSeconds: 255, action: "SCENARIO_STARTED", label: "CAMERA_SCALE" },
+  { atSeconds: 270, action: "CHANGE_ONSET", label: "CAMERA_SCALE" },
+  { atSeconds: 280, action: "SCENARIO_ENDED", label: "CAMERA_SCALE" },
+  { atSeconds: 290, action: "SCENARIO_STARTED", label: "CAMERA_RETURN" },
+  { atSeconds: 305, action: "CHANGE_ONSET", label: "CAMERA_RETURN" },
+  { atSeconds: 320, action: "SCENARIO_ENDED", label: "CAMERA_RETURN" },
+  { atSeconds: 330, action: "SESSION_ENDED" },
 ];
 
 // The preset leaves enough time for the subject to settle before each drift.

@@ -1,5 +1,7 @@
 import type {
   CameraProfile,
+  CameraAssessment,
+  CameraTransform,
   FrameFeature,
   MADProfile,
   ScenarioLabel,
@@ -11,6 +13,7 @@ export type SessionType = "POSTURE" | "CAMERA";
 export type SessionMarkerType =
   | "SCENARIO_STARTED"
   | "DRIFT_ONSET"
+  | "CHANGE_ONSET"
   | "SCENARIO_ENDED";
 
 export interface SessionMarker {
@@ -35,6 +38,8 @@ export interface SessionLogEntry {
   metadata?: SessionMetadata;
   groundTruth: ScenarioLabel["label"];
   cameraState: string;
+  cameraTransform?: CameraTransform;
+  cameraAssessment?: CameraAssessment;
   confidence: number;
   features: Omit<FrameFeature, "timestamp" | "confidence">;
   markers?: SessionMarker[];
@@ -76,6 +81,8 @@ export class SessionRecorder {
     feature: FrameFeature,
     groundTruth: ScenarioLabel["label"],
     cameraState: string,
+    cameraTransform?: CameraTransform | null,
+    cameraAssessment?: CameraAssessment | null,
   ): void {
     if (!this.recording) return;
 
@@ -89,6 +96,8 @@ export class SessionRecorder {
         : {}),
       groundTruth,
       cameraState,
+      ...(cameraTransform ? { cameraTransform } : {}),
+      ...(cameraAssessment ? { cameraAssessment } : {}),
       confidence: feature.confidence,
       features,
     };
@@ -158,7 +167,7 @@ export function labelsFromEntries(
             ? "SETTLING"
             : marker.label,
         });
-      } else if (marker.type === "DRIFT_ONSET") {
+      } else if (marker.type === "DRIFT_ONSET" || marker.type === "CHANGE_ONSET") {
         labels.push({ timestamp: marker.timestamp, label: marker.label });
       } else if (marker.type === "SCENARIO_ENDED") {
         labels.push({ timestamp: marker.timestamp, label: "NORMAL_WORK" });

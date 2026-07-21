@@ -29,6 +29,11 @@ import {
 import { ScenarioLabeler } from "../../evaluation/scenario-labeler";
 import { analyzeDevelopmentSession } from "../../evaluation/development-analysis";
 import {
+  analyzeCameraVerificationSession,
+  formatCameraVerificationMetrics,
+} from "../../evaluation/camera-verification";
+import { CameraAssessmentTracker } from "../../core/camera-assessment";
+import {
   getNextDevelopmentStep,
   CAMERA_DEVELOPMENT_SESSION,
   STANDARD_DEVELOPMENT_SESSION,
@@ -36,10 +41,8 @@ import {
 } from "../../evaluation/development-session";
 import type { SessionType } from "../../evaluation/recorder";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
-import {
-  BackgroundMotionTracker,
-  describeMovementContext,
-} from "../background-motion-tracker";
+import { describeMovementContext } from "../background-motion-tracker";
+import { BackgroundFeatureTracker } from "../background-feature-tracker";
 import { SessionAudioNotifier } from "../session-audio";
 import type {
   CameraProfile,
@@ -132,6 +135,16 @@ async function main() {
   thresholdSweepOutput.className = "threshold-sweep-output";
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
+  const modeButton = document.createElement("button");
+  modeButton.textContent = "Camera Verification Mode";
+  const cameraFileInput = document.createElement("input");
+  cameraFileInput.type = "file";
+  cameraFileInput.accept = ".jsonl,.ndjson,.txt,application/jsonl";
+  cameraFileInput.hidden = true;
+  const cameraUploadButton = document.createElement("button");
+  cameraUploadButton.textContent = "Analyze Camera JSONL";
+  const cameraVerificationOutput = document.createElement("pre");
+  cameraVerificationOutput.className = "threshold-sweep-output";
   const scenarioSelect = document.createElement("select");
   scenarioSelect.className = "scenario-select";
   const scenarios: Array<{ value: ScenarioLabel["label"]; text: string }> = [
@@ -145,6 +158,13 @@ async function main() {
     { value: "HEAD_TURN", text: "Head turn" },
     { value: "CLOSE_TO_CAMERA", text: "Close to camera" },
     { value: "CAMERA_CHANGE", text: "Camera change" },
+    { value: "CAMERA_TRANSLATION_X", text: "Camera: left/right" },
+    { value: "CAMERA_TRANSLATION_Y", text: "Camera: up/down" },
+    { value: "CAMERA_ROLL", text: "Camera: rotate screen angle" },
+    { value: "CAMERA_YAW_LEFT", text: "Camera: turn left" },
+    { value: "CAMERA_YAW_RIGHT", text: "Camera: turn right" },
+    { value: "CAMERA_SCALE", text: "Camera: closer/farther" },
+    { value: "CAMERA_RETURN", text: "Camera: return to baseline" },
     { value: "HEAD_TILT", text: "Head tilt" },
     { value: "CHIN_REST", text: "Chin rest" },
     { value: "HEAD_BACK", text: "Head back" },
@@ -174,6 +194,9 @@ async function main() {
     downloadButton,
     thresholdSweepButton,
     thresholdFileInput,
+    modeButton,
+    cameraUploadButton,
+    cameraFileInput,
     scenarioSelect,
     scenarioStartedButton,
     driftOnsetButton,
@@ -186,7 +209,7 @@ async function main() {
   sessionInstruction.className = "session-instruction";
   sessionInstruction.textContent = "자동 Development Session을 시작하면 안내가 표시됩니다.";
 
-  sidePanel.append(controls, sessionInstruction, status, thresholdSweepOutput);
+  sidePanel.append(controls, sessionInstruction, status, thresholdSweepOutput, cameraVerificationOutput);
   layout.append(canvas, sidePanel);
   app.append(video, layout, alertBannerRow);
   addLayoutStyles();
@@ -194,7 +217,8 @@ async function main() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const backgroundMotionTracker = new BackgroundMotionTracker();
+  const backgroundFeatureTracker = new BackgroundFeatureTracker();
+  const cameraAssessmentTracker = new CameraAssessmentTracker();
   const movementClassifier = new MovementClassifier();
   const sessionAudio = new SessionAudioNotifier();
 
@@ -228,6 +252,7 @@ async function main() {
   } | null = null;
   let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
+  let cameraVerificationMode = false;
 
   const recorder = new SessionRecorder();
   const scenarioLabeler = new ScenarioLabeler();
@@ -251,7 +276,8 @@ async function main() {
     calibrationFrames = [];
     calibrationCameraFrames = [];
     movementClassifier.reset();
-    backgroundMotionTracker.reset();
+    backgroundFeatureTracker.reset();
+    cameraAssessmentTracker.reset();
     calibrationDeadline = performance.now() + CALIBRATION_DURATION_MS;
     calibrationMessage = "";
     calibrateButton.disabled = true;
@@ -278,7 +304,8 @@ async function main() {
       const nextMadProfile = createInitialMADProfile({ now: Date.now() });
       activateProfile(nextProfile, nextCameraProfile, nextMadProfile);
       movementClassifier.reset();
-      backgroundMotionTracker.reset();
+      backgroundFeatureTracker.reset();
+      cameraAssessmentTracker.reset();
       const createdAt = Date.now();
       await saveProfiles({
         userProfile: nextProfile,
@@ -325,8 +352,11 @@ async function main() {
 
   scenarioSelect.onchange = () => {
     selectedScenario = scenarioSelect.value as ScenarioLabel["label"];
+    driftOnsetButton.textContent = isCameraScenario(selectedScenario)
+      ? "Change onset"
+      : "Drift onset";
     driftOnsetButton.disabled =
-      !recorder.isRecording() || !isDriftScenario(selectedScenario);
+      !recorder.isRecording() || (!isDriftScenario(selectedScenario) && !isCameraScenario(selectedScenario));
   };
 
   scenarioStartedButton.onclick = () => {
@@ -338,12 +368,16 @@ async function main() {
     if (
       !recorder.isRecording() ||
       !scenarioActive ||
-      !isDriftScenario(selectedScenario)
+      (!isDriftScenario(selectedScenario) && !isCameraScenario(selectedScenario))
     ) {
       return;
     }
 
-    markDriftOnset(selectedScenario);
+    if (isCameraScenario(selectedScenario)) {
+      markChangeOnset(selectedScenario);
+    } else {
+      markDriftOnset(selectedScenario);
+    }
   };
 
   scenarioEndedButton.onclick = endScenario;
@@ -352,6 +386,18 @@ async function main() {
     toggleAutomatedSession("POSTURE", STANDARD_DEVELOPMENT_SESSION, automatedSessionButton);
   cameraSessionButton.onclick = () =>
     toggleAutomatedSession("CAMERA", CAMERA_DEVELOPMENT_SESSION, cameraSessionButton);
+
+  modeButton.onclick = () => {
+    cameraVerificationMode = !cameraVerificationMode;
+    sidePanel.classList.toggle("camera-verification-mode", cameraVerificationMode);
+    alertBannerRow.hidden = cameraVerificationMode;
+    modeButton.textContent = cameraVerificationMode
+      ? "Posture Mode"
+      : "Camera Verification Mode";
+    cameraVerificationOutput.hidden = !cameraVerificationMode;
+  };
+
+  cameraVerificationOutput.hidden = true;
 
   function toggleAutomatedSession(
     sessionType: SessionType,
@@ -395,6 +441,7 @@ async function main() {
     cameraSessionButton.textContent = "Development_Camera_Session";
     scenarioStartedButton.disabled = false;
     scenarioEndedButton.disabled = false;
+    driftOnsetButton.textContent = sessionType === "CAMERA" ? "Change onset" : "Drift onset";
   }
 
   function finishRecording(): void {
@@ -442,7 +489,7 @@ async function main() {
     );
     recorder.mark({ timestamp, type: "SCENARIO_STARTED", label });
     scenarioActive = true;
-    driftOnsetButton.disabled = !isDriftScenario(label);
+    driftOnsetButton.disabled = !isDriftScenario(label) && !isCameraScenario(label);
   }
 
   function markDriftOnset(label: ScenarioLabel["label"]): void {
@@ -453,6 +500,14 @@ async function main() {
     const timestamp = performance.now();
     scenarioLabeler.setLabel(timestamp, label);
     recorder.mark({ timestamp, type: "DRIFT_ONSET", label });
+    driftOnsetButton.disabled = true;
+  }
+
+  function markChangeOnset(label: ScenarioLabel["label"]): void {
+    if (!recorder.isRecording() || !scenarioActive || !isCameraScenario(label)) return;
+    const timestamp = performance.now();
+    scenarioLabeler.setLabel(timestamp, label);
+    recorder.mark({ timestamp, type: "CHANGE_ONSET", label });
     driftOnsetButton.disabled = true;
   }
 
@@ -502,6 +557,7 @@ async function main() {
         startScenario(label);
       }
       if (action === "DRIFT_ONSET" && label) markDriftOnset(label);
+      if (action === "CHANGE_ONSET" && label) markChangeOnset(label);
       if (action === "SCENARIO_ENDED") endScenario();
       if (action === "SESSION_ENDED") finishRecording();
     }
@@ -523,9 +579,9 @@ async function main() {
     }
 
     if (currentStep.action === "SCENARIO_STARTED" && currentStep.label) {
-      if (currentStep.label === "CAMERA_CHANGE") {
+      if (isCameraScenario(currentStep.label)) {
         sessionInstruction.textContent =
-          "Camera change scenario: move the camera as instructed while keeping your posture stable.";
+          cameraInstruction(currentStep.label);
         return;
       }
       sessionInstruction.textContent = isDriftScenario(currentStep.label)
@@ -539,6 +595,11 @@ async function main() {
     if (currentStep.action === "DRIFT_ONSET" && currentStep.label) {
       sessionInstruction.textContent =
         `${scenarioName(currentStep.label)} 자세를 완성했습니다. 지금 자세를 유지하세요.`;
+      return;
+    }
+
+    if (currentStep.action === "CHANGE_ONSET" && currentStep.label) {
+      sessionInstruction.textContent = cameraInstruction(currentStep.label);
       return;
     }
 
@@ -579,6 +640,23 @@ async function main() {
     }
   };
 
+  cameraUploadButton.onclick = () => cameraFileInput.click();
+  cameraFileInput.onchange = async () => {
+    const file = cameraFileInput.files?.[0];
+    if (!file) return;
+    cameraVerificationOutput.textContent = "camera verification running...";
+    try {
+      const entries = parseJSONL(await file.text());
+      const report = analyzeCameraVerificationSession(entries);
+      cameraVerificationOutput.textContent = [`file: ${file.name}`, formatCameraVerificationMetrics(report)].join("\n");
+      console.info("Camera verification", report);
+    } catch (error) {
+      cameraVerificationOutput.textContent = `camera verification failed: ${String(error)}`;
+    } finally {
+      cameraFileInput.value = "";
+    }
+  };
+
   function setAlertBanner(
     banner: HTMLDivElement,
     kind: "idle" | "unknown" | "good" | "bad",
@@ -603,7 +681,8 @@ async function main() {
     if (!quality.reliable || !landmarks) {
       previousFeature = null;
       movementClassifier.reset();
-      backgroundMotionTracker.reset();
+      backgroundFeatureTracker.reset();
+      cameraAssessmentTracker.reset();
       status.textContent = `state: ${describeUnreliableState(quality)}\n${JSON.stringify(quality, null, 2)}`;
       setAlertBanner(v0AlertBanner, "unknown", `V0: ${describeUnreliableState(quality)}`);
       setAlertBanner(v2AlertBanner, "unknown", `V2: ${describeUnreliableState(quality)}`);
@@ -624,9 +703,14 @@ async function main() {
       return;
     }
 
-    const backgroundMotion = backgroundMotionTracker.update(video);
-    feature.backgroundMotion = backgroundMotion.magnitude;
-    feature.backgroundTransformConfidence = backgroundMotion.confidence;
+    const cameraTransform = backgroundFeatureTracker.update(video, timestamp);
+    const cameraAssessment = cameraAssessmentTracker.update(cameraTransform, timestamp);
+    const backgroundMotion = cameraTransform
+      ? Math.hypot(cameraTransform.translationX, cameraTransform.translationY) +
+        Math.abs(cameraTransform.scale) + Math.abs(cameraTransform.roll)
+      : 0;
+    feature.backgroundMotion = backgroundMotion;
+    feature.backgroundTransformConfidence = cameraTransform?.confidence ?? 0;
     const movement = movementClassifier.update(feature);
     feature.movementContext = movement.context;
 
@@ -663,14 +747,23 @@ async function main() {
       }
       v2PostureDetector?.setMADProfile(madProfile);
       if (recorder.isRecording()) {
-        recorder.record(feature, scenarioLabeler.getCurrentLabel(), "UNKNOWN");
+        recorder.record(
+          feature,
+          scenarioLabeler.getCurrentLabel(),
+          cameraAssessment.state,
+          cameraTransform,
+          cameraAssessment,
+        );
       }
     }
 
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
       setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
-    } else {
+    } else if (currentSessionType === "CAMERA" && cameraAssessment.motionPhase !== "STABLE") {
+      setAlertBanner(v0AlertBanner, "idle", "Camera movement: posture judgment paused");
+      setAlertBanner(v2AlertBanner, "idle", "Camera movement: posture judgment paused");
+    } else if (!cameraVerificationMode) {
       // V0/V2 are judged and shown independently — they can (and are
       // expected to) disagree, that's the whole point of comparing them.
       if (event?.alert) {
@@ -686,7 +779,29 @@ async function main() {
       }
     }
 
-    status.textContent = [
+    const cameraStatus = [
+      `camera verification: ${cameraVerificationMode ? "ON" : "off"}`,
+      cameraProfile ? "camera profile: saved" : "camera profile: not calibrated",
+      `camera state: ${cameraAssessment.state}`,
+      `camera motion phase: ${cameraAssessment.motionPhase ?? "STABLE"}`,
+      cameraAssessment.motionPhase !== "STABLE"
+        ? "camera judgment: PAUSED until movement settles"
+        : "camera judgment: active",
+      cameraAssessment.episodeFrameCount !== undefined
+        ? `episode frames: ${cameraAssessment.episodeFrameCount} (unknown ${cameraAssessment.episodeUnknownFrameCount ?? 0})`
+        : "",
+      `camera reliability: ${cameraAssessment.reliability.toFixed(2)}`,
+      cameraTransform ? `background points: ${cameraTransform.trackedPointCount}` : "background points: waiting",
+      cameraTransform ? `inlier ratio: ${cameraTransform.inlierRatio.toFixed(2)}` : "",
+      cameraTransform ? `reprojection error: ${cameraTransform.reprojectionError.toFixed(2)}px` : "",
+      cameraTransform ? `translation: x=${cameraTransform.translationX.toFixed(3)}, y=${cameraTransform.translationY.toFixed(3)}` : "",
+      cameraTransform ? `scale delta: ${(cameraTransform.scale * 100).toFixed(1)}%` : "",
+      cameraTransform ? `roll: ${(cameraTransform.roll * 180 / Math.PI).toFixed(1)}deg` : "",
+      cameraTransform?.yawProxy !== undefined ? `yaw proxy: ${cameraTransform.yawProxy.toFixed(4)}` : "",
+      cameraTransform?.pitchProxy !== undefined ? `pitch proxy: ${cameraTransform.pitchProxy.toFixed(4)}` : "",
+      cameraAssessment.reason?.length ? `reason: ${cameraAssessment.reason.join(", ")}` : "",
+    ].filter((line) => line.length > 0).join("\n");
+    const postureStatus = [
       cameraProfile
         ? "camera profile: saved (assessment pending)"
         : "camera profile: not calibrated",
@@ -697,7 +812,7 @@ async function main() {
       cameraDelta ? `camera translation Y: ${cameraDelta.globalTranslationY.toFixed(3)}` : "",
       cameraDelta ? `corrected yaw: ${cameraDelta.correctedYaw.toFixed(3)}` : "",
       `movement context: ${describeMovementContext(movement.context)}`,
-      `background motion: ${backgroundMotion.magnitude.toFixed(3)}`,
+      `background motion: ${backgroundMotion.toFixed(3)}`,
       `movement onset: ${movement.onset.toLowerCase()}`,
       `landmark confidence: ${feature.confidence.toFixed(2)}`,
       `landmark coverage: ${(quality.landmarkCoverage * 100).toFixed(0)}%`,
@@ -775,6 +890,7 @@ async function main() {
     ]
       .filter((line) => line.length > 0)
       .join("\n");
+    status.textContent = cameraVerificationMode ? cameraStatus : postureStatus;
 
     requestAnimationFrame(loop);
   };
@@ -981,6 +1097,35 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "CHIN_TUCK" ||
     label === "TORSO_TWIST" ||
     label === "SHOULDERS_ONLY_TWIST";
+}
+
+function isCameraScenario(label: ScenarioLabel["label"]): boolean {
+  return label === "CAMERA_CHANGE" ||
+    label === "CAMERA_TRANSLATION_X" ||
+    label === "CAMERA_TRANSLATION_Y" ||
+    label === "CAMERA_ROLL" ||
+    label === "CAMERA_YAW_LEFT" ||
+    label === "CAMERA_YAW_RIGHT" ||
+    label === "CAMERA_PITCH_UP" ||
+    label === "CAMERA_PITCH_DOWN" ||
+    label === "CAMERA_SCALE" ||
+    label === "CAMERA_RETURN";
+}
+
+function cameraInstruction(label: ScenarioLabel["label"]): string {
+  const instructions: Partial<Record<ScenarioLabel["label"], string>> = {
+    CAMERA_TRANSLATION_X: "Keep laptop height and screen angle fixed, then move the laptop left or right.",
+    CAMERA_TRANSLATION_Y: "Keep screen angle fixed, then move the laptop camera vertically while keeping posture stable.",
+    CAMERA_ROLL: "Keep laptop height fixed, then rotate the screen left/right around its center. Keep your posture stable.",
+    CAMERA_YAW_LEFT: "Keep the laptop in the same place and rotate it so the camera points to the user's left. Keep your posture stable.",
+    CAMERA_YAW_RIGHT: "Keep the laptop in the same place and rotate it so the camera points to the user's right. Keep your posture stable.",
+    CAMERA_PITCH_UP: "Keep laptop position fixed, then tilt the screen upward. Keep your posture stable.",
+    CAMERA_PITCH_DOWN: "Keep laptop position fixed, then tilt the screen downward. Keep your posture stable.",
+    CAMERA_SCALE: "Move the laptop closer or farther without changing your posture.",
+    CAMERA_RETURN: "Return the laptop to the original calibrated position.",
+    CAMERA_CHANGE: "Change the camera environment while keeping your posture stable.",
+  };
+  return instructions[label] ?? "Keep your posture stable and follow the camera instruction.";
 }
 
 function scenarioName(label: ScenarioLabel["label"]): string {
