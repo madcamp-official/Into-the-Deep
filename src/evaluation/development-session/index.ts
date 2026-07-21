@@ -67,9 +67,13 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 359, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
   { atSeconds: 364, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
   { atSeconds: 376, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  { atSeconds: 386, action: "SCENARIO_STARTED", label: "CHIN_TUCK" },
-  { atSeconds: 391, action: "DRIFT_ONSET", label: "CHIN_TUCK" },
-  { atSeconds: 403, action: "SCENARIO_ENDED", label: "CHIN_TUCK" },
+  // CHIN_TUCK slot repurposed for ARMREST_LEAN: CHIN_TUCK's rule was removed
+  // (dead code — its required feature was never actually computed), while
+  // ARMREST_LEAN is a new rule added this session that the standard script
+  // didn't cover yet.
+  { atSeconds: 386, action: "SCENARIO_STARTED", label: "ARMREST_LEAN" },
+  { atSeconds: 391, action: "DRIFT_ONSET", label: "ARMREST_LEAN" },
+  { atSeconds: 403, action: "SCENARIO_ENDED", label: "ARMREST_LEAN" },
   { atSeconds: 413, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
   { atSeconds: 418, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
   { atSeconds: 430, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
