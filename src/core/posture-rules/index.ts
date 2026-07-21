@@ -22,18 +22,17 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      // Lowered 0.8 -> 0.6 earlier this project for a different reason (see
-      // git history) — since then, user reported this rule firing too
-      // often as "too sensitive" on both v0 and v2. A fresh session replay
-      // showed why raising it is actually safe here: NORMAL_WORK's false-
-      // positive rate barely moves with threshold (9.2% at 0.6 -> 7.8% at
-      // 0.8), but that's an acceptable tradeoff against reduced sensitivity
-      // to the user's actual complaint. Raised back to 0.8; genuine
-      // FORWARD_HEAD recall in that same replay drops from 69.4% -> 37.0%
-      // at this threshold (real cost, accepted deliberately) — if HEAD_DOWN
-      // starts winning instead for genuine turtle-neck cases the way it did
-      // before 0.6 was tried, that's the next thing to check live.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
+      // History: 0.6 (too sensitive) -> 0.8 (session replay: NORMAL_WORK
+      // false-positive 9.2%->7.8%, but genuine recall 69.4%->37.0%) -> live
+      // testing at 0.8 then showed genuine held FORWARD_HEAD scoring right
+      // at the boundary (0.80/1.01/1.12 across 3 captures of the same
+      // hold), so ordinary jitter flickered it in and out of match — the
+      // 0.8 fix traded oversensitivity for under-detection instead of
+      // fixing the real problem (single-frame faceToShoulderRatio doesn't
+      // cleanly separate these cases at any threshold, confirmed by the
+      // replay's own sweep). 0.7 splits the difference (replay: NORMAL_WORK
+      // 8.5%, genuine recall 53.4%) — still a compromise, not a fix.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
