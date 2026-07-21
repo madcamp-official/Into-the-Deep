@@ -20,7 +20,12 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
+      // Lowered 0.8 -> 0.6: a recorded development session (avg 0.66 across
+      // the whole FORWARD_HEAD segment) and a fresh live capture (0.72)
+      // both landed just under 0.8, causing HEAD_DOWN (pitchProxy alone) to
+      // win instead as the sole match. Two consistent readings under the
+      // old threshold, not a one-off — 0.6 clears both.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.6, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
@@ -60,7 +65,12 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // (session-1784560098508.jsonl) through the current rules —
     // NORMAL_WORK/SETTLING pitchProxy average 0.4-0.53, so 0.7 was far too
     // close to ordinary noise to be a safe bar.
-    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.8, reference: "CALIBRATION" }],
+    // Lowered again 1.8 -> 1.3: live capture of a genuine held head-down
+    // pitch only scored 1.54 under the current calibration (same MAD-basis
+    // drift seen repeatedly this session) and failed to match at all. 1.3
+    // clears it while staying well above the jsonl session's ~0.5 noise
+    // ceiling.
+    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.3, reference: "CALIBRATION" }],
     supporting: ["headYRatio", "headShoulderDistanceRatio"],
     reason: "head is pitched down relative to the calibrated direction",
     // Same story as FORWARD_HEAD's priority: pitchProxy alone rises for
