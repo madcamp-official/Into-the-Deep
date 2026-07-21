@@ -2,7 +2,9 @@ import type { LandmarkName, PostureRule } from "../types";
 
 const CORE: LandmarkName[] = ["nose", "leftShoulder", "rightShoulder"];
 const EYES: LandmarkName[] = [...CORE, "leftEye", "rightEye"];
-const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
+// EARS only used by HEAD_TURN, currently disabled below — kept here so
+// re-enabling it doesn't need this line rewritten too.
+// const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
 
 // Thresholds are normalized deviations (feature delta / feature MAD). They
 // are intentionally conservative starting values for development-session tuning.
@@ -190,30 +192,32 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // it only wins the "pure lean, no twist" case it's meant to.
     priority: 2.1,
   },
-  {
-    postureType: "HEAD_TURN",
-    requiredLandmarks: EARS,
-    // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
-    // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
-    // the head yaws the eye line too (2D-projection cross-axis
-    // contamination, the mirror image of the earlier finding that a pure
-    // tilt contaminates yawProxy), so this exclusion was above its own
-    // threshold and blocked the rule from ever matching its own posture.
-    // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
-    // BACKWARD_LEAN no longer competes here anyway (its new
-    // shoulderWidthRatio requirement excludes pure head reorientation), so
-    // the exclusion isn't needed for that either.
-    required: [
-      { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
-    ],
-    anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-    ],
-    supporting: ["headXRatio", "yawProxy", "headRoll"],
-    reason: "head direction differs from the calibrated direction",
-    priority: 0.8,
-  },
+  // HEAD_TURN disabled for now (decided to drop it, not delete it — keep
+  // for possible future re-enable):
+  // {
+  //   postureType: "HEAD_TURN",
+  //   requiredLandmarks: EARS,
+  //   // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
+  //   // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
+  //   // the head yaws the eye line too (2D-projection cross-axis
+  //   // contamination, the mirror image of the earlier finding that a pure
+  //   // tilt contaminates yawProxy), so this exclusion was above its own
+  //   // threshold and blocked the rule from ever matching its own posture.
+  //   // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
+  //   // BACKWARD_LEAN no longer competes here anyway (its new
+  //   // shoulderWidthRatio requirement excludes pure head reorientation), so
+  //   // the exclusion isn't needed for that either.
+  //   required: [
+  //     { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+  //   ],
+  //   anyOf: [
+  //     { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //     { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //   ],
+  //   supporting: ["headXRatio", "yawProxy", "headRoll"],
+  //   reason: "head direction differs from the calibrated direction",
+  //   priority: 0.8,
+  // },
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
