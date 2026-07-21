@@ -1,4 +1,4 @@
-// Dev-only Electron shell around the existing web app. Two windows:
+// Electron shell around the existing web app. Two windows:
 //  - detectorWindow: hidden, backgroundThrottling disabled, runs the same
 //    webcam -> pose-landmarker -> PostureRuleDetector pipeline as
 //    product.html (see electron-detector.html / electron-detector-main.ts)
@@ -14,12 +14,20 @@
 // A tray icon provides "캘리브레이션 시작" (opens a normal window loading the
 // existing product.html to calibrate/re-calibrate) and "종료".
 //
-// Not packaged — run via `npm run electron:dev`, which starts a Vite dev
-// server and points these windows at it. See electron/dev-launcher.js.
+// Two run modes:
+//  - Dev: `npm run electron:dev` starts a Vite dev server and passes its URL
+//    via --url; windows loadURL from there. See electron/dev-launcher.js.
+//  - Packaged: no dev server. Windows loadFile the pre-built dist/*.html
+//    (produced by `npm run build`) that electron-builder bundles alongside
+//    this file — see the "build" config in package.json.
+// Packaged-only extras: registers itself to launch at Windows login, and
+// auto-opens calibration on first run (no saved profile yet) instead of
+// requiring a trip to the tray menu — the whole point of "installed" is
+// opening the laptop and being immediately ready to calibrate.
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, session } = require("electron");
 const path = require("node:path");
 
-const devServerUrl = getDevServerUrlFromArgs();
+const devServerUrl = app.isPackaged ? null : getDevServerUrlFromArgs();
 
 let detectorWindow = null;
 let overlayWindow = null;
@@ -34,6 +42,16 @@ function getDevServerUrlFromArgs() {
   return "http://localhost:5173";
 }
 
+// dist/*.html reference their JS/CSS with relative paths (vite.config.ts
+// sets base: "./") specifically so this works under file://.
+function loadPage(win, htmlFileName) {
+  if (devServerUrl) {
+    win.loadURL(`${devServerUrl}/${htmlFileName}`);
+  } else {
+    win.loadFile(path.join(__dirname, "..", "dist", htmlFileName));
+  }
+}
+
 function createDetectorWindow() {
   detectorWindow = new BrowserWindow({
     show: false,
@@ -44,12 +62,14 @@ function createDetectorWindow() {
       backgroundThrottling: false,
     },
   });
-  detectorWindow.loadURL(`${devServerUrl}/electron-detector.html`);
-  // The window itself is hidden, so without this, camera/permission/model
-  // errors would be silently swallowed. Dev-only convenience.
-  detectorWindow.webContents.on("did-finish-load", () => {
-    detectorWindow.webContents.openDevTools({ mode: "detach" });
-  });
+  loadPage(detectorWindow, "electron-detector.html");
+  if (devServerUrl) {
+    // The window itself is hidden, so without this, camera/permission/model
+    // errors would be silently swallowed. Dev-only convenience.
+    detectorWindow.webContents.on("did-finish-load", () => {
+      detectorWindow.webContents.openDevTools({ mode: "detach" });
+    });
+  }
   detectorWindow.on("closed", () => {
     detectorWindow = null;
   });
@@ -85,7 +105,7 @@ function createOverlayWindow() {
 
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setIgnoreMouseEvents(true, { forward: true });
-  overlayWindow.loadURL(`${devServerUrl}/electron-overlay.html`);
+  loadPage(overlayWindow, "electron-overlay.html");
   overlayWindow.on("closed", () => {
     overlayWindow = null;
   });
@@ -113,13 +133,15 @@ function openCalibrationWindow() {
       nodeIntegration: false,
     },
   });
-  calibrationWindow.loadURL(`${devServerUrl}/product.html`);
-  // Dev-only: surface the [webcam] track diagnostics (see webcam.ts) so
-  // camera capture issues are visible instead of just a black/placeholder
-  // canvas.
-  calibrationWindow.webContents.once("did-finish-load", () => {
-    calibrationWindow?.webContents.openDevTools({ mode: "detach" });
-  });
+  loadPage(calibrationWindow, "product.html");
+  if (devServerUrl) {
+    // Dev-only: surface the [webcam] track diagnostics (see webcam.ts) so
+    // camera capture issues are visible instead of just a black/placeholder
+    // canvas.
+    calibrationWindow.webContents.once("did-finish-load", () => {
+      calibrationWindow?.webContents.openDevTools({ mode: "detach" });
+    });
+  }
   calibrationWindow.on("closed", () => {
     calibrationWindow = null;
     createDetectorWindow();
@@ -127,9 +149,9 @@ function openCalibrationWindow() {
 }
 
 function createTrayIcon() {
-  // Solid-color square built at runtime (no bundled asset needed for a
-  // dev-only tray icon) — Electron's nativeImage.createFromBuffer accepts
-  // raw BGRA pixel data directly.
+  // Solid-color square built at runtime (no bundled asset needed) —
+  // Electron's nativeImage.createFromBuffer accepts raw BGRA pixel data
+  // directly. TODO: replace with a real designed icon.
   const size = 16;
   const buffer = Buffer.alloc(size * size * 4);
   for (let i = 0; i < size * size; i += 1) {
@@ -143,7 +165,7 @@ function createTrayIcon() {
 
 function createTray() {
   tray = new Tray(createTrayIcon());
-  tray.setToolTip("요정 — 바른 자세 코치 (dev)");
+  tray.setToolTip("요정 — 바른 자세 코치");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "캘리브레이션 시작", click: () => openCalibrationWindow() },
@@ -154,12 +176,22 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  // Auto-grant camera access for the local dev server origin — this is a
-  // dev-only shell, not a packaged app users install, so there's no
-  // consent UI to build yet.
+  // Auto-grant camera access — this app has no other consent UI of its own
+  // yet, and this permission gate is the standard Electron one for the
+  // "media" (mic/camera) request, separate from the OS-level camera privacy
+  // toggle Windows still enforces on top of this.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === "media");
   });
+
+  if (app.isPackaged) {
+    // "설치하면 켤 때마다 바로 쓸 수 있게" — launch at Windows login so the
+    // detector/overlay are already running when the laptop opens. Only
+    // meaningful once packaged: in dev this would register whatever
+    // Electron dev binary happened to run this, not something worth
+    // auto-starting.
+    app.setLoginItemSettings({ openAtLogin: true });
+  }
 
   createDetectorWindow();
   createOverlayWindow();
@@ -167,13 +199,19 @@ app.whenReady().then(() => {
 });
 
 ipcMain.on("posture-alert", (_event, payload) => {
-  console.log("[main] posture-alert ->", payload.title);
   overlayWindow?.webContents.send("posture-alert", payload);
 });
 
 ipcMain.on("set-ignore-mouse-events", (event, ignore) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win?.setIgnoreMouseEvents(ignore, { forward: true });
+});
+
+// First run (or profile cleared): jump straight to calibration instead of
+// making the user find the tray icon — "바로 진행" is the point of having
+// this launch automatically at login.
+ipcMain.on("no-profile", () => {
+  openCalibrationWindow();
 });
 
 app.on("window-all-closed", () => {

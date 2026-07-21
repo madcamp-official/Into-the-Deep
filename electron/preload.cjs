@@ -19,4 +19,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // pointer is over the fairy/bubble so it doesn't block whatever app sits
   // underneath the rest of the transparent window.
   setIgnoreMouseEvents: (ignore) => ipcRenderer.send("set-ignore-mouse-events", ignore),
+
+  // Sent by the headless detector window on startup when there's no saved
+  // profile yet; main.cjs reacts by auto-opening the calibration window.
+  notifyNoProfile: () => ipcRenderer.send("no-profile"),
 });
