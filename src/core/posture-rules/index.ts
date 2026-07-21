@@ -353,16 +353,11 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // BACKWARD_LEAN's 1.3 did.
     priority: 2.0,
   },
-  {
-    postureType: "SHOULDERS_ONLY_TWIST",
-    requiredLandmarks: CORE,
-    required: [
-      { feature: "torsoRotationProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
-      { feature: "correctedYaw", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
-    ],
-    supporting: ["shoulderWidthRatio", "shoulderTilt"],
-    reason: "shoulders rotate while the head remains forward",
-  },
+  // SHOULDERS_ONLY_TWIST intentionally removed: its required torsoRotationProxy
+  // condition is dead code — that feature is never actually computed by
+  // feature-normalizer, so the condition always scored undefined and this
+  // rule could never match (confirmed via a fresh session replay: 0/222
+  // correct). Same situation as the removed CHIN_TUCK rule.
   {
     postureType: "ARMREST_LEAN",
     requiredLandmarks: CORE,

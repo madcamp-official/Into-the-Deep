@@ -27,8 +27,9 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
 // (no matching rule — SIDE_SHIFT and CLOSE_TO_CAMERA specifically have no
 // discriminating feature at all, LEFT_LEAN/RIGHT_LEAN/TRANSIENT_ACTION are
 // ScenarioLabel-only categories, not a rule's postureType) and
-// ROUNDED_SHOULDERS/CHIN_TUCK (rules deleted this session). Added
-// HEAD_DOWN, which has an active rule but wasn't in the script before.
+// ROUNDED_SHOULDERS/CHIN_TUCK/SHOULDERS_ONLY_TWIST (rules deleted — the
+// latter two were dead code, their required feature was never computed).
+// Added HEAD_DOWN, which has an active rule but wasn't in the script before.
 export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
   { atSeconds: 15, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
@@ -64,10 +65,7 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 165, action: "SCENARIO_STARTED", label: "TORSO_TWIST" },
   { atSeconds: 167, action: "DRIFT_ONSET", label: "TORSO_TWIST" },
   { atSeconds: 175, action: "SCENARIO_ENDED", label: "TORSO_TWIST" },
-  { atSeconds: 180, action: "SCENARIO_STARTED", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 182, action: "DRIFT_ONSET", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 190, action: "SCENARIO_ENDED", label: "SHOULDERS_ONLY_TWIST" },
-  { atSeconds: 195, action: "SESSION_ENDED" },
+  { atSeconds: 180, action: "SESSION_ENDED" },
 ];
 
 export function getNextDevelopmentStep(
