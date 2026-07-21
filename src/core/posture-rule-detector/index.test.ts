@@ -128,6 +128,7 @@ describe("PostureRuleDetector", () => {
       sustainedSeconds: 1.5,
       motionEnergyGate: 0.15,
       motionSustainMs: 250,
+      motionSettleMs: 0, // isolate this from the post-motion settle period, covered separately below
     });
 
     expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
@@ -139,6 +140,35 @@ describe("PostureRuleDetector", () => {
     // Motion stops; dwell should keep counting from t=0, not from t=400.
     expect(detector.update(createFrame(600, 0.31))).toMatchObject({ state: "BAD", alert: false });
     expect(detector.update(createFrame(1600, 0.31))).toMatchObject({ state: "BAD", alert: true });
+  });
+
+  it("keeps holding MOVING for motionSettleMs after motion drops back under the gate", () => {
+    const profile = createProfile();
+    const rule: PostureRule = {
+      postureType: "FORWARD_HEAD",
+      requiredLandmarks: ["nose", "leftShoulder", "rightShoulder"],
+      required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+      supporting: [],
+      reason: "head is forward",
+    };
+    const detector = new PostureRuleDetector(profile, createInitialMADProfile({ values: { headXRatio: 0.1 } }), {
+      rules: [rule],
+      sustainedSeconds: 1.5,
+      motionEnergyGate: 0.15,
+      motionSustainMs: 250,
+      motionSettleMs: 600,
+    });
+
+    expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
+    // Sustained motion confirmed at t=400 (streak since t=100 >= 250ms).
+    expect(detector.update(createFrame(100, 0.31, 0.5))).toMatchObject({ state: "BAD", alert: false });
+    expect(detector.update(createFrame(400, 0.31, 0.5))).toMatchObject({ state: "MOVING", alert: false });
+    // Motion drops back under the gate, but settle window (600ms from t=400)
+    // hasn't elapsed yet — still held.
+    expect(detector.update(createFrame(700, 0.31))).toMatchObject({ state: "MOVING", alert: false });
+    expect(detector.update(createFrame(950, 0.31))).toMatchObject({ state: "MOVING", alert: false });
+    // Past the settle window: judgment resumes.
+    expect(detector.update(createFrame(1050, 0.31))).toMatchObject({ state: "BAD", alert: false });
   });
 
   it("drops a stale dwell timer once motion is held past the reset window", () => {
@@ -155,6 +185,7 @@ describe("PostureRuleDetector", () => {
       sustainedSeconds: 1.5,
       motionEnergyGate: 0.15,
       motionSustainMs: 250,
+      motionSettleMs: 0, // isolate this from the post-motion settle period, covered separately above
     });
 
     expect(detector.update(createFrame(0, 0.31))).toMatchObject({ state: "BAD", alert: false });
