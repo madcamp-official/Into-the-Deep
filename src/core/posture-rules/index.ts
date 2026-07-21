@@ -25,6 +25,17 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
+    // Added after replaying session-1784560098508.jsonl: faceToShoulderRatio
+    // rises for almost every "face got closer/bigger" posture, not just
+    // turtle neck — real averages were FORWARD_LEAN 6.72, CLOSE_TO_CAMERA
+    // 4.17, SHOULDERS_ONLY_TWIST 7.37, CHIN_REST 3.21, all bigger than
+    // genuine FORWARD_HEAD's own 2.52. Evidence-score is normalized/
+    // threshold, and this rule's threshold (1.2) is the lowest of the
+    // bunch, so it mechanically out-scored every one of those more
+    // specific (multi-condition) rules and swallowed them all. Lower
+    // priority lets a more specific rule win whenever it also matches;
+    // this only wins when it's the sole match (a "pure" turtle neck).
+    priority: 0.4,
   },
   {
     postureType: "HEAD_DOWN",
@@ -37,9 +48,20 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // as a *transient* action (writing, glancing down), but a *sustained*
     // hold of the same pitch is a distinct posture worth its own alert
     // rather than being silently absorbed into FORWARD_HEAD.
-    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.5, reference: "CALIBRATION" }],
+    // Threshold raised 0.7 -> 1.8: replayed a real recorded session
+    // (session-1784560098508.jsonl) through the current rules —
+    // NORMAL_WORK/SETTLING pitchProxy average 0.4-0.53, so 0.7 was far too
+    // close to ordinary noise to be a safe bar.
+    required: [{ feature: "pitchProxy", operator: "GT", threshold: 1.8, reference: "CALIBRATION" }],
     supporting: ["headYRatio", "headShoulderDistanceRatio"],
     reason: "head is pitched down relative to the calibrated direction",
+    // Same story as FORWARD_HEAD's priority: pitchProxy alone rises for
+    // several other postures too (real averages CHIN_REST 3.35,
+    // CLOSE_TO_CAMERA 3.26, FORWARD_LEAN 4.94, all bigger than HEAD_DOWN
+    // needs), and this rule's single easy condition out-scored their
+    // more specific multi-condition rules. Deprioritized so this only
+    // wins as the sole match.
+    priority: 0.4,
   },
   // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
   // shoulderWidth — an absolute screen position divided by scale, not a
@@ -58,6 +80,10 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "FORWARD_LEAN",
     requiredLandmarks: CORE,
+    // Threshold raised 0.5 -> 2: replayed session-1784560098508.jsonl —
+    // NORMAL_WORK/SETTLING forwardLeanProxy averages 0.36-0.51, so 0.5 was
+    // firing on ordinary noise. Real FORWARD_LEAN in the same session
+    // averaged 4.17, so 2 keeps a safe margin on both sides.
     required: [{ feature: "forwardLeanProxy", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
     supporting: ["bodyCompressionRatio", "headYRatio"],
     reason: "upper body is leaning forward",
@@ -65,15 +91,24 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "BACKWARD_LEAN",
     requiredLandmarks: EYES,
-    // Used forwardLeanProxy (= faceToShoulderRatio + pitchProxy, delta'd
-    // together). Since pitchProxy is baked into that sum, a pure head-back
-    // tilt (HEAD_BACK, no torso movement) drags forwardLeanProxy down too
-    // and could fire this as if the whole body leaned back. Whole-body lean
-    // is really about faceToShoulderRatio alone (face gets smaller as the
-    // torso moves away) — using that directly instead of the combined
-    // proxy keeps this independent of pure head-angle changes.
+    // faceToShoulderRatio alone (previous design) turned out to be a bad
+    // solo signal: replaying session-1784560098508.jsonl showed it shrinks
+    // for almost *any* head reorientation, not just a real torso lean back
+    // — HEAD_BACK groundtruth averaged -6.14 and HEAD_TURN averaged -6.76
+    // on this same feature, both bigger in magnitude than real
+    // BACKWARD_LEAN's own -1.68. That's why HEAD_BACK/HEAD_TURN were being
+    // swallowed by this rule 100% of the time.
+    //
+    // The real discriminator in the data: shoulderWidthRatio (= bodyScale)
+    // only drops for genuine BACKWARD_LEAN (-2.84 avg) — a pure head
+    // tilt/turn leaves the torso in place, so shoulderWidthRatio stays
+    // near 0 for HEAD_BACK (-0.51) and HEAD_TURN (-0.91). Requiring both
+    // conditions together (torso actually moved away from the camera, not
+    // just the face angle changing) fixes both the false positives and
+    // the HEAD_BACK/HEAD_TURN starvation without touching those rules.
     required: [
-      { feature: "faceToShoulderRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "LT", threshold: -1, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
     reason: "upper body is leaning backward",
@@ -81,28 +116,38 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_TURN",
     requiredLandmarks: EARS,
-    // yawProxy alone is noisy when the head is partially occluded or the
-    // camera is slightly off-axis. A head tilt can also move the nose between
-    // the ears, so require horizontal displacement and exclude a tilted head.
+    // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
+    // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
+    // the head yaws the eye line too (2D-projection cross-axis
+    // contamination, the mirror image of the earlier finding that a pure
+    // tilt contaminates yawProxy), so this exclusion was above its own
+    // threshold and blocked the rule from ever matching its own posture.
+    // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
+    // BACKWARD_LEAN no longer competes here anyway (its new
+    // shoulderWidthRatio requirement excludes pure head reorientation), so
+    // the exclusion isn't needed for that either.
     required: [
       { feature: "headXRatio", operator: "ABS_GT", threshold: 2.5, reference: "CALIBRATION" },
-      { feature: "headRoll", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" },
     ],
     anyOf: [
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
       { feature: "yawProxy", operator: "ABS_GT", threshold: 4, reference: "CALIBRATION" },
     ],
-    supporting: ["headXRatio", "yawProxy"],
+    supporting: ["headXRatio", "yawProxy", "headRoll"],
     reason: "head direction differs from the calibrated direction",
     priority: 0.8,
   },
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
-    // Lowered from 2 -> 1.2, same reasoning as FORWARD_HEAD: wanted a
-    // moderate tilt to register, not just a pronounced one. Candidate
-    // value, not yet tuned against a development session.
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 1.2, reference: "CALIBRATION" }],
+    // Raised 1.2 -> 2.2: replaying session-1784560098508.jsonl showed this
+    // was the single biggest source of false *alerts* (352 sustained false
+    // positives during NORMAL_WORK/SETTLING) — 1.2 sat too close to
+    // ordinary noise (NORMAL_WORK/SETTLING headRoll averages 0.39-0.48,
+    // but individual frames swing well past 1.2 during natural movement).
+    // Real HEAD_TILT in the same session averaged -12.85, so 2.2 keeps a
+    // large margin on that side.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2.2, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
@@ -117,21 +162,26 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   },
   {
     postureType: "ROUNDED_SHOULDERS",
-    // EYES, not just CORE: relativeShoulderScale (added below) needs eye
-    // distance, so the rule should defer (not silently fail to match) when
-    // eyes aren't reliable.
+    // EYES, not just CORE: relativeShoulderScale needs eye distance, so
+    // the rule should defer (not silently fail to match) when eyes aren't
+    // reliable.
     requiredLandmarks: EYES,
-    // shoulderWidthRatio alone (= raw shoulderWidth vs its calibration
-    // value) can't tell "shoulders rounded forward" apart from "moved
-    // farther from the camera" — both shrink shoulderWidth identically.
-    // Confirmed live: this rule fired as a false positive with no real
-    // rounding happening (same class of environment-vs-posture confound as
-    // shoulderXOffset/SIDE_SHIFT). relativeShoulderScale (shoulderWidth /
-    // face width) stays flat under a pure distance change since both
-    // shrink together, but drops when the shoulders actually narrow
-    // relative to a face that hasn't changed size — requiring it too
-    // (feature_discussion rule 11's actual "동일 방향" AND, which this rule
-    // had dropped) filters the distance-only case out.
+    // Tried shoulderWidthRatio LT -2 (theory: filters out pure
+    // camera-distance changes) and relativeShoulderScale alone at various
+    // thresholds/priorities while replaying session-1784560098508.jsonl.
+    // Neither held up: shoulderWidthRatio barely differs from NORMAL_WORK
+    // for real ROUNDED_SHOULDERS (-0.24 vs -0.22), and relativeShoulderScale
+    // swings even harder for several *other* postures (FORWARD_LEAN
+    // -31.58, SHOULDERS_ONLY_TWIST -33.76, CHIN_REST -17.52, FORWARD_HEAD
+    // -14.14 — all bigger in magnitude than genuine ROUNDED_SHOULDERS'
+    // own -8.61), so loosening it enough to catch its own cases made it
+    // swallow those other rules instead, and tightening/deprioritizing it
+    // enough to stop that made it miss most of its own cases again.
+    // Left as the (still imperfect, ~0% recall but at least not
+    // disruptive) dual-condition version pending a real per-feature MAD
+    // recalibration — relativeShoulderScale's default MAD (0.04) looks too
+    // small for its actual natural variance given how wildly it swings
+    // across every label.
     required: [
       { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
       { feature: "relativeShoulderScale", operator: "LT", threshold: -1, reference: "CALIBRATION" },
@@ -142,7 +192,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "CHIN_REST",
     requiredLandmarks: HANDS,
-    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -2, reference: "CALIBRATION" }],
+    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" }],
     anyOf: [
       { feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "pitchProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
@@ -154,19 +204,21 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
   {
     postureType: "HEAD_BACK",
     requiredLandmarks: EYES,
-    // The forwardLeanProxy ABS_LT exclusion used to fight its own first
-    // condition: forwardLeanProxy bakes pitchProxy into its sum, so a big
-    // enough pitchProxy drop to satisfy condition 1 usually also pushes
-    // forwardLeanProxy well past the "stayed near 0" exclusion in
-    // condition 2 — the rule could end up almost never matching.
-    // faceToShoulderRatio directly is the actual "torso hasn't moved"
-    // signal (independent of pitchProxy), so excluding on that instead
-    // lets this fire whenever the head alone tilts back.
-    required: [
-      { feature: "pitchProxy", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "faceToShoulderRatio", operator: "ABS_LT", threshold: 1.2, reference: "CALIBRATION" },
-    ],
-    supporting: ["headYRatio", "headShoulderDistanceRatio", "forwardLeanProxy"],
+    // The faceToShoulderRatio ABS_LT exclusion (an earlier attempt to
+    // require "torso hasn't moved") turned out to fight the rule's own
+    // purpose: replaying session-1784560098508.jsonl showed real HEAD_BACK
+    // groundtruth averages faceToShoulderRatio -6.14 (tilting the head back
+    // to look up drastically foreshortens the face) — far past the 1.2
+    // exclusion, so the rule almost never matched its own posture and
+    // BACKWARD_LEAN (which also used faceToShoulderRatio at the time)
+    // caught 100% of these frames instead. BACKWARD_LEAN's new
+    // shoulderWidthRatio requirement now handles that disambiguation
+    // (a real torso lean shrinks shoulder width, a head tilt doesn't), so
+    // this rule no longer needs its own exclusion — pitchProxy's magnitude
+    // (real HEAD_BACK averaged -8.54, comfortably past -2) is enough on
+    // its own.
+    required: [{ feature: "pitchProxy", operator: "LT", threshold: -2, reference: "CALIBRATION" }],
+    supporting: ["headYRatio", "headShoulderDistanceRatio", "faceToShoulderRatio", "forwardLeanProxy"],
     reason: "head is tilted backward without a matching torso lean",
   },
   {
