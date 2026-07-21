@@ -20,6 +20,14 @@ import { buildUserProfile } from "../../core/profile-builder";
 import { createInitialMADProfile, normalizeFeature } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
+
+// A single-frame motionEnergy threshold alone can't separate landmark
+// jitter from real motion — live captures showed a static ARMREST_LEAN
+// hold spike to 0.398 while a genuine mouse-reach frame read as low as
+// 0.190 (see posture-rule-detector's motionSustainMs comment). Gate stays
+// moderate; PostureRuleDetector's sustain-duration check is what actually
+// filters out single-frame noise.
+const V2_MOTION_ENERGY_GATE = 0.2;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
@@ -323,8 +331,12 @@ async function main() {
     profile = nextProfile;
     cameraProfile = nextCameraProfile;
     madProfile = nextMadProfile;
-    postureDetector = new PostureRuleDetector(profile, madProfile);
-    v2PostureDetector = new PostureRuleDetector(profile, madProfile);
+    // v0 is the zero-latency baseline: alert fires the instant a rule
+    // matches, no sustained-dwell delay and no motion-energy hold.
+    postureDetector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 0 });
+    v2PostureDetector = new PostureRuleDetector(profile, madProfile, {
+      motionEnergyGate: V2_MOTION_ENERGY_GATE,
+    });
     v2MadUpdater = new V2MadUpdater(madProfile);
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
