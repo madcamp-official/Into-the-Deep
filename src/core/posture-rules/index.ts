@@ -21,7 +21,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -147,7 +147,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // but individual frames swing well past 1.2 during natural movement).
     // Real HEAD_TILT in the same session averaged -12.85, so 2.2 keeps a
     // large margin on that side.
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2.2, reference: "CALIBRATION" }],
+    //
+    // Raised again 2.2 -> 5: live capture-button testing found FORWARD_HEAD
+    // reliably swallowed by this rule whenever a forward-head/turtle-neck
+    // hold incidentally produced some head roll too (headRoll scores -3.12,
+    // -2.70 across two separate attempts) — FORWARD_HEAD's priority (0.4,
+    // see above) couldn't outweigh even a marginal HEAD_TILT match. A
+    // deliberate, roll-only head tilt (no forward-head component) instead
+    // scored -9.19/+8.94 in the same session — a clean gap above the
+    // contamination ceiling, so 5 excludes the forward-head side-effect
+    // while keeping genuine tilts (which score far higher) comfortably
+    // matched.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
