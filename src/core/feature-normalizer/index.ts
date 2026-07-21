@@ -4,13 +4,25 @@ import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
 import { HAND_LANDMARK_INDEX } from "../../web/camera-adapter/hand-landmarker";
 import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 
-// How much each frame's smoothed value moves toward the raw reading —
-// lower is smoother/slower to react, 1 disables smoothing entirely.
-// Candidate value; not yet tuned against a real development session. Same
-// weight for every feature for now, even though yawProxy in particular
-// looked noisier than the rest during the V1 driftScore review — worth
-// revisiting with a per-feature weight if this uniform value isn't enough.
-const SMOOTHING_ALPHA = 0.3;
+// One Euro Filter (Casiez et al.) replaced the old fixed-alpha EMA: a fixed
+// alpha is a single trade-off between jitter suppression and lag, but
+// landmark jitter is worst while roughly still and least noticeable during
+// genuine fast motion — exactly the case an adaptive cutoff handles. Cutoff
+// frequency rises with the signal's own speed, so slow/still frames (jitter)
+// get smoothed hard while fast frames (real posture changes) get smoothed
+// gently, cutting lag without giving back the jitter suppression.
+//
+// MIN_CUTOFF initially chosen to reproduce roughly the old alpha=0.3 EMA's
+// smoothing strength at rest (~2.07, solving dt/(dt + 1/(2*pi*cutoff)) = 0.3
+// at 30fps). User reported still-live jitter and asked for stronger
+// suppression — lowering cutoff increases smoothing (lower cutoff -> larger
+// tau -> smaller alpha), so 1.0 roughly halves the effective at-rest alpha
+// to ~0.17. This likely needs some posture-rules/index.ts threshold
+// re-verification live, unlike the original 2.07 pick. BETA (speed
+// sensitivity) unchanged — not yet verified live against a real session;
+// adjust if genuine posture transitions feel laggy.
+const ONE_EURO_MIN_CUTOFF = 1.0;
+const ONE_EURO_BETA = 0.05;
 
 // How far a single frame's raw (pre-smoothing) reading is allowed to move
 // from the previous smoothed reading, combined the same way as
@@ -55,6 +67,12 @@ export function toFrameFeature(
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!nose || !leftShoulder || !rightShoulder) return null;
+
+  // Shadows oneEuroSmooth for every `smooth(...)` call below so each one
+  // doesn't need its own dt argument threaded through.
+  const dt = previous ? (timestamp - previous.timestamp) / 1000 : 0;
+  const smooth = (current: number, previousValue: number | undefined): number =>
+    oneEuroSmooth(current, previousValue, dt);
 
   const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
   const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
@@ -358,13 +376,20 @@ export function toFrameFeature(
   };
 }
 
-// Exponential moving average: nudges the smoothed value toward the raw
-// reading by SMOOTHING_ALPHA each frame rather than jumping straight to
-// it. `previous` is undefined on the first frame (or right after a
-// reliability gap, since main.ts resets its previousFeature to null then),
-// so there's nothing to smooth against yet — just return the raw reading.
-function smooth(current: number, previous: number | undefined): number {
-  return previous === undefined ? current : previous + SMOOTHING_ALPHA * (current - previous);
+// One Euro Filter, simplified to a single stored state (the previous
+// *smoothed* value) to fit this module's existing "previous FrameFeature"
+// pattern — the derivative is estimated from that smoothed value rather
+// than a separately-smoothed raw signal the canonical filter tracks. `dt`
+// is seconds since the previous frame; `previous` is undefined on the first
+// frame (or right after a reliability gap, since main.ts resets its
+// previousFeature to null then), so there's nothing to smooth against yet —
+// just return the raw reading.
+function oneEuroSmooth(current: number, previous: number | undefined, dt: number): number {
+  if (previous === undefined || dt <= 0) return current;
+  const derivative = (current - previous) / dt;
+  const cutoff = ONE_EURO_MIN_CUTOFF + ONE_EURO_BETA * Math.abs(derivative);
+  const alpha = dt / (dt + 1 / (2 * Math.PI * cutoff));
+  return previous + alpha * (current - previous);
 }
 
 function isVisible(point: NormalizedLandmark | undefined, minConfidence: number): boolean {

@@ -141,6 +141,7 @@ export function labelsFromEntries(
           timestamp: marker.timestamp,
           label: marker.label === "FORWARD_LEAN" ||
               marker.label === "FORWARD_HEAD" ||
+              marker.label === "HEAD_DOWN" ||
               marker.label === "LEFT_LEAN" ||
               marker.label === "RIGHT_LEAN" ||
               marker.label === "SIDE_SHIFT" ||

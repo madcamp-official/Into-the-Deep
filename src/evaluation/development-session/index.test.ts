@@ -21,7 +21,7 @@ describe("development session preset", () => {
     expect(second?.step).toEqual({
       atSeconds: 20,
       action: "SCENARIO_STARTED",
-      label: "TRANSIENT_ACTION",
+      label: "FORWARD_HEAD",
     });
   });
 
