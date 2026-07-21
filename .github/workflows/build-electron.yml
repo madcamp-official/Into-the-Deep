@@ -12,12 +12,15 @@ name: Build Electron App
 #  - push to the branch / manual dispatch: build + upload as a plain
 #    Actions artifact, for quick "does it still build" checks. Downloadable
 #    from the run page, but not a versioned release.
-#  - pushing a "v*" tag: also creates/updates a draft GitHub Release and
-#    attaches just the one installer teammates actually need per OS
-#    (PostureFairy-Setup-*.exe / *.dmg) — deliberately NOT using
-#    electron-builder's own --publish (it also uploads latest.yml +
-#    *.blockmap auto-update metadata we don't use, which only added
-#    confusion about which of ~11 assets to download).
+#  - pushing a "v*" tag: builds AND publishes straight to a real (non-draft)
+#    GitHub Release via electron-builder's own --publish always (see
+#    "release:win"/"release:mac" in package.json — build.publish there points
+#    at this repo with releaseType "release"). This is also what makes
+#    auto-update work: --publish is what generates and uploads latest.yml /
+#    latest-mac.yml / *.blockmap alongside the installers, which is the feed
+#    electron-updater (electron/main.cjs) polls on already-installed clients.
+#    No human approval step — a tag push goes live to users automatically,
+#    by design (see feature/product-frontend-ui history).
 on:
   workflow_dispatch:
   push:
@@ -50,16 +53,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: npm run dist:win
-
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
-        run: npm run dist:mac
+      - name: Build & publish (Windows)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        run: npm run release:win
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & publish (macOS)
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        run: npm run release:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Unsigned build: no Apple Developer certificate in this repo.
           # Without this, electron-builder tries (and fails) to find one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build only (Windows)
+        if: runner.os == 'Windows' && !startsWith(github.ref, 'refs/tags/v')
+        run: npm run dist:win
+
+      - name: Build only (macOS)
+        if: runner.os == 'macOS' && !startsWith(github.ref, 'refs/tags/v')
+        run: npm run dist:mac
+        env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload build artifacts
@@ -68,14 +84,5 @@ jobs:
           name: posturefairy-${{ matrix.os }}
           if-no-files-found: warn
           path: |
-            release/*.exe
-            release/*.dmg
-
-      - name: Attach installer to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
             release/*.exe
             release/*.dmg
