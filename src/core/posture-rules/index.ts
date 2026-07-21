@@ -161,7 +161,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // sat close enough to those two that the ambiguity gate returned
     // UNKNOWN instead of picking a winner. priority 1.3 gives a genuine
     // double-condition match enough of an edge to win outright.
-    priority: 1.3,
+    //
+    // Raised 1.3 -> 2.1: TORSO_TWIST's own priority was later bumped to 2.0
+    // (to beat FORWARD_HEAD, see TORSO_TWIST below), which silently
+    // re-broke this fix — confirmed live, a pure backward lean (no actual
+    // twist) flipped to TORSO_TWIST whenever correctedYaw's noise crossed
+    // its ABS_GT 2 threshold (observed score 2.46 while only leaning back).
+    // Safe to win outright rather than risk on evidence score: a genuine
+    // torso twist inflates faceToShoulderRatio to strongly positive values
+    // (TORSO_TWIST's own comment below, ~5-7), which fails this rule's own
+    // faceToShoulderRatio LT -1 requirement, so this can't steal real
+    // twists — it only wins the "pure lean, no twist" case it's meant to.
+    priority: 2.1,
   },
   {
     postureType: "HEAD_TURN",
