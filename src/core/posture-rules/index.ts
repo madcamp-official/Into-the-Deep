@@ -171,35 +171,21 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["shoulderAsymmetry"],
     reason: "shoulder heights are asymmetric",
   },
-  {
-    postureType: "ROUNDED_SHOULDERS",
-    // EYES, not just CORE: relativeShoulderScale needs eye distance, so
-    // the rule should defer (not silently fail to match) when eyes aren't
-    // reliable.
-    requiredLandmarks: EYES,
-    // Tried shoulderWidthRatio LT -2 (theory: filters out pure
-    // camera-distance changes) and relativeShoulderScale alone at various
-    // thresholds/priorities while replaying session-1784560098508.jsonl.
-    // Neither held up: shoulderWidthRatio barely differs from NORMAL_WORK
-    // for real ROUNDED_SHOULDERS (-0.24 vs -0.22), and relativeShoulderScale
-    // swings even harder for several *other* postures (FORWARD_LEAN
-    // -31.58, SHOULDERS_ONLY_TWIST -33.76, CHIN_REST -17.52, FORWARD_HEAD
-    // -14.14 — all bigger in magnitude than genuine ROUNDED_SHOULDERS'
-    // own -8.61), so loosening it enough to catch its own cases made it
-    // swallow those other rules instead, and tightening/deprioritizing it
-    // enough to stop that made it miss most of its own cases again.
-    // Left as the (still imperfect, ~0% recall but at least not
-    // disruptive) dual-condition version pending a real per-feature MAD
-    // recalibration — relativeShoulderScale's default MAD (0.04) looks too
-    // small for its actual natural variance given how wildly it swings
-    // across every label.
-    required: [
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "relativeShoulderScale", operator: "LT", threshold: -1, reference: "CALIBRATION" },
-    ],
-    supporting: ["faceToShoulderRatio", "shoulderTilt"],
-    reason: "shoulder shape is narrower than the calibrated posture",
-  },
+  // ROUNDED_SHOULDERS intentionally omitted: both candidate signals failed
+  // to discriminate it, confirmed twice now (session-1784560098508.jsonl
+  // replay, then again with live capture-button testing on a real rounded-
+  // shoulders hold). shoulderWidthRatio barely moves for genuine rounded
+  // shoulders (jsonl replay: -0.24 vs NORMAL_WORK's -0.22; live capture:
+  // score -0.37, nowhere near the -2 the rule needed). relativeShoulderScale
+  // does move (live capture: -10.10), but it swings just as hard or harder
+  // for several *other* postures (jsonl replay averages: FORWARD_LEAN
+  // -31.58, SHOULDERS_ONLY_TWIST -33.76, CHIN_REST -17.52, FORWARD_HEAD
+  // -14.14, all bigger in magnitude than genuine ROUNDED_SHOULDERS' own
+  // -8.61) — the live capture landed in that same contaminated range and
+  // matched as FORWARD_HEAD instead. A z-axis (shoulder-depth) alternative
+  // was also tried and abandoned (didn't move in the expected direction on
+  // live testing). Stays unimplemented until a feature actually separates
+  // it from FORWARD_HEAD/FORWARD_LEAN/CHIN_REST/SHOULDERS_ONLY_TWIST.
   {
     postureType: "CHIN_REST",
     requiredLandmarks: HANDS,
