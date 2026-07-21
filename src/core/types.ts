@@ -174,8 +174,7 @@ export interface CameraDelta {
   correctedYaw: number;
 }
 
-export interface CameraTransform {
-  timestamp: number;
+export interface CameraTransformSnapshot {
   translationX: number;
   translationY: number;
   scale: number;
@@ -186,7 +185,12 @@ export interface CameraTransform {
   inlierRatio: number;
   reprojectionError: number;
   confidence: number;
+}
+
+export interface CameraTransform extends CameraTransformSnapshot {
+  timestamp: number;
   source: "BACKGROUND_FEATURES";
+  keyframeTransform?: CameraTransformSnapshot;
 }
 
 export interface CameraAssessment {

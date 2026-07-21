@@ -247,7 +247,7 @@ function exceedsScenarioThreshold(
 
 function aggregateTransforms(entries: readonly SessionLogEntry[]): CameraTransform | null {
   const transforms = entries
-    .map((entry) => entry.cameraTransform)
+    .map(transformForEntry)
     .filter((transform): transform is CameraTransform => Boolean(transform));
   if (transforms.length === 0) return null;
   return {
@@ -270,7 +270,7 @@ function aggregateEpisodeTransform(entries: readonly SessionLogEntry[]): CameraT
   const aggregate = aggregateTransforms(entries);
   if (!aggregate) return null;
   const transforms = entries
-    .map((entry) => entry.cameraTransform)
+    .map(transformForEntry)
     .filter((transform): transform is CameraTransform => Boolean(transform));
   return {
     ...aggregate,
@@ -279,6 +279,14 @@ function aggregateEpisodeTransform(entries: readonly SessionLogEntry[]): CameraT
     scale: transforms.reduce((sum, transform) => sum + transform.scale, 0),
     roll: transforms.reduce((sum, transform) => sum + transform.roll, 0),
   };
+}
+
+function transformForEntry(entry: SessionLogEntry): CameraTransform | undefined {
+  const transform = entry.cameraTransform;
+  if (transform?.keyframeTransform) {
+    return { ...transform, ...transform.keyframeTransform };
+  }
+  return entry.cameraAssessment?.transform ?? transform;
 }
 
 function hasOptionalValues(

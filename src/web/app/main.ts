@@ -46,7 +46,7 @@ import {
 import type { SessionType } from "../../evaluation/recorder";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import { describeMovementContext } from "../background-motion-tracker";
-import { BackgroundFeatureTracker } from "../background-feature-tracker";
+import { BackgroundFeatureTracker, type BackgroundReference } from "../background-feature-tracker";
 import { SessionAudioNotifier } from "../session-audio";
 import type {
   CameraProfile,
@@ -276,6 +276,8 @@ async function main() {
   let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
   let cameraVerificationMode = false;
+  let backgroundReference: BackgroundReference | undefined;
+  let startupReferenceCheckUntil = 0;
   let latestEvent: DetectionEvent | null = null;
   let latestV2Event: DetectionEvent | null = null;
   let captureCount = 0;
@@ -292,6 +294,9 @@ async function main() {
         storedProfiles.madProfile ?? createInitialMADProfile(),
       );
       profileCreatedAt = storedProfiles.lastCalibrationAt;
+      backgroundReference = storedProfiles.backgroundReference;
+      backgroundFeatureTracker.setReference(backgroundReference);
+      startupReferenceCheckUntil = performance.now() + 3000;
       calibrationMessage = "saved profile restored";
     }
   } catch (error) {
@@ -316,6 +321,7 @@ async function main() {
   ): Promise<void> {
     const nextProfile = buildUserProfile(frames);
     const nextCameraProfile = buildCameraProfile(cameraFrames);
+    const nextBackgroundReference = backgroundFeatureTracker.captureReference();
 
     try {
       if (
@@ -338,7 +344,10 @@ async function main() {
         cameraProfile: nextCameraProfile,
         madProfile: nextMadProfile,
         lastCalibrationAt: createdAt,
+        backgroundReference: nextBackgroundReference ?? undefined,
       });
+      backgroundReference = nextBackgroundReference ?? undefined;
+      backgroundFeatureTracker.setReference(backgroundReference);
       profileCreatedAt = createdAt;
       calibrationMessage = "profile saved";
     } catch (error) {
@@ -643,7 +652,8 @@ async function main() {
     }
 
     if (currentStep.action === "CHANGE_ONSET" && currentStep.label) {
-      sessionInstruction.textContent = cameraInstruction(currentStep.label);
+      sessionInstruction.textContent =
+        `NOW: ${cameraInstruction(currentStep.label)} Start the camera movement now and keep it steady when finished.`;
       return;
     }
 
@@ -749,7 +759,11 @@ async function main() {
     }
 
     const cameraTransform = backgroundFeatureTracker.update(video, timestamp);
-    const cameraAssessment = cameraAssessmentTracker.update(cameraTransform, timestamp);
+    const startupTransform = timestamp <= startupReferenceCheckUntil
+      ? backgroundFeatureTracker.compareReference(video, timestamp)
+      : null;
+    const environmentTransform = startupTransform ?? cameraTransform;
+    const cameraAssessment = cameraAssessmentTracker.update(environmentTransform, timestamp);
     const backgroundMotion = cameraTransform
       ? Math.hypot(cameraTransform.translationX, cameraTransform.translationY) +
         Math.abs(cameraTransform.scale) + Math.abs(cameraTransform.roll)
@@ -846,6 +860,13 @@ async function main() {
       cameraTransform ? `roll: ${(cameraTransform.roll * 180 / Math.PI).toFixed(1)}deg` : "",
       cameraTransform?.yawProxy !== undefined ? `yaw proxy: ${cameraTransform.yawProxy.toFixed(4)}` : "",
       cameraTransform?.pitchProxy !== undefined ? `pitch proxy: ${cameraTransform.pitchProxy.toFixed(4)}` : "",
+      `keyframe tracking: ${cameraTransform?.keyframeTransform ? "active" : "waiting"}`,
+      cameraTransform?.keyframeTransform
+        ? `keyframe delta: x=${cameraTransform.keyframeTransform.translationX.toFixed(3)}, y=${cameraTransform.keyframeTransform.translationY.toFixed(3)}, scale=${(cameraTransform.keyframeTransform.scale * 100).toFixed(1)}%`
+        : "",
+      startupReferenceCheckUntil > timestamp
+        ? `startup reference comparison: ${startupTransform ? "active" : "waiting"}`
+        : "",
       cameraAssessment.reason?.length ? `reason: ${cameraAssessment.reason.join(", ")}` : "",
     ].filter((line) => line.length > 0).join("\n");
     const postureStatus = [

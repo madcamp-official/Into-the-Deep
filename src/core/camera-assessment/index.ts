@@ -150,7 +150,9 @@ export class CameraAssessmentTracker {
 
     this.unknownSince = null;
     const nextTransform = episodeFinished
-      ? buildEpisodeTransform(transform, this.episodeTransforms)
+      ? transform.keyframeTransform
+        ? { ...transform, ...transform.keyframeTransform }
+        : buildEpisodeTransform(transform, this.episodeTransforms)
       : transform;
     const next = assessCameraTransform(nextTransform);
     if (!this.stable) {

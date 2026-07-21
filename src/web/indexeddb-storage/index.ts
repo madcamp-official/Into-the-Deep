@@ -1,4 +1,5 @@
 import type { CameraProfile, MADProfile, UserProfile } from "../../core/types";
+import type { BackgroundReference } from "../background-feature-tracker";
 
 const DB_NAME = "posture-core";
 const DB_VERSION = 1;
@@ -10,6 +11,7 @@ export interface StoredProfiles {
   cameraProfile: CameraProfile;
   madProfile?: MADProfile;
   lastCalibrationAt: number;
+  backgroundReference?: BackgroundReference;
 }
 
 export function openProfileStore(): Promise<IDBDatabase> {

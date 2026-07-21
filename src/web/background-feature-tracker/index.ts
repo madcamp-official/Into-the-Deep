@@ -1,4 +1,4 @@
-import type { CameraTransform } from "../../core/types";
+import type { CameraTransform, CameraTransformSnapshot } from "../../core/types";
 
 interface Point {
   x: number;
@@ -13,11 +13,17 @@ export interface BackgroundFeatureTrackerOptions {
   minMatchScore?: number;
 }
 
+export interface BackgroundReference {
+  width: number;
+  height: number;
+  grayscale: number[];
+}
+
 const DEFAULT_OPTIONS: Required<BackgroundFeatureTrackerOptions> = {
   width: 320,
   height: 180,
   patchRadius: 3,
-  searchRadius: 12,
+  searchRadius: 18,
   minMatchScore: 0.82,
 };
 
@@ -30,6 +36,10 @@ export class BackgroundFeatureTracker {
   private readonly context: CanvasRenderingContext2D;
   private previous: Float32Array | null = null;
   private previousPoints: Point[] = [];
+  private anchor: Float32Array | null = null;
+  private anchorPoints: Point[] = [];
+  private anchorLastMotionAt = 0;
+  private reference: Float32Array | null = null;
 
   constructor(options: BackgroundFeatureTrackerOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -44,6 +54,54 @@ export class BackgroundFeatureTracker {
   reset(): void {
     this.previous = null;
     this.previousPoints = [];
+    this.anchor = null;
+    this.anchorPoints = [];
+    this.anchorLastMotionAt = 0;
+    this.reference = null;
+  }
+
+  captureReference(): BackgroundReference | null {
+    return this.previous
+      ? {
+          width: this.options.width,
+          height: this.options.height,
+          grayscale: Array.from(this.previous),
+        }
+      : null;
+  }
+
+  setReference(reference: BackgroundReference | undefined): void {
+    this.reference = reference &&
+        reference.width === this.options.width &&
+        reference.height === this.options.height
+      ? Float32Array.from(reference.grayscale)
+      : null;
+  }
+
+  compareReference(video: HTMLVideoElement, timestamp: number): CameraTransform | null {
+    if (!this.reference || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
+    this.context.drawImage(video, 0, 0, this.options.width, this.options.height);
+    const image = this.context.getImageData(0, 0, this.options.width, this.options.height);
+    const current = toGray(image.data);
+    const points = createPoints(this.options.width, this.options.height);
+    const matches = points
+      .map((point) => matchPatch(this.reference!, current, point, this.options))
+      .filter((match): match is { from: Point; to: Point; score: number } => match !== null);
+    if (matches.length < 4) return null;
+    const estimate = estimateTransform(matches);
+    const confidence = clamp(
+      (matches.length / points.length) * estimate.inlierRatio *
+        (1 - Math.min(estimate.reprojectionError / 12, 1)),
+      0,
+      1,
+    );
+    return {
+      timestamp,
+      ...estimate,
+      trackedPointCount: matches.length,
+      confidence,
+      source: "BACKGROUND_FEATURES",
+    };
   }
 
   update(video: HTMLVideoElement, timestamp: number): CameraTransform | null {
@@ -61,6 +119,8 @@ export class BackgroundFeatureTracker {
       return null;
     }
 
+    const previousFrame = this.previous;
+    const previousPoints = this.previousPoints;
     const matches = points
       .map((point) => matchPatch(this.previous!, current, point, this.options))
       .filter((match): match is { from: Point; to: Point; score: number } => match !== null);
@@ -79,13 +139,52 @@ export class BackgroundFeatureTracker {
       0,
       1,
     );
-    return {
+    const frameTransform: CameraTransform = {
       timestamp,
       ...transform,
       trackedPointCount: matches.length,
       confidence,
       source: "BACKGROUND_FEATURES",
     };
+    const frameMotion = Math.abs(frameTransform.translationX) +
+      Math.abs(frameTransform.translationY) +
+      Math.abs(frameTransform.scale) +
+      Math.abs(frameTransform.roll);
+    if (!this.anchor && frameMotion >= 0.02 && previousFrame) {
+      this.anchor = previousFrame;
+      this.anchorPoints = previousPoints;
+      this.anchorLastMotionAt = timestamp;
+    }
+    let keyframeTransform: CameraTransformSnapshot | undefined;
+    if (this.anchor && this.anchorPoints.length >= 4) {
+      const anchorMatches = this.anchorPoints
+        .map((point) => matchPatch(this.anchor!, current, point, this.options))
+        .filter((match): match is { from: Point; to: Point; score: number } => match !== null);
+      if (anchorMatches.length >= 4) {
+        const anchorEstimate = estimateTransform(anchorMatches);
+        const anchorConfidence = clamp(
+          (anchorMatches.length / this.anchorPoints.length) * anchorEstimate.inlierRatio *
+            (1 - Math.min(anchorEstimate.reprojectionError / 12, 1)),
+          0,
+          1,
+        );
+        keyframeTransform = {
+          ...anchorEstimate,
+          trackedPointCount: anchorMatches.length,
+          confidence: anchorConfidence,
+        };
+        if (frameMotion >= 0.01) this.anchorLastMotionAt = timestamp;
+      }
+    }
+    const result = keyframeTransform
+      ? { ...frameTransform, keyframeTransform }
+      : frameTransform;
+    if (this.anchor && timestamp - this.anchorLastMotionAt > 1200) {
+      this.anchor = null;
+      this.anchorPoints = [];
+      this.anchorLastMotionAt = 0;
+    }
+    return result;
   }
 }
 
