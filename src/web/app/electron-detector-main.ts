@@ -11,13 +11,18 @@ import {
   detectHandsForVideoFrame,
 } from "../camera-adapter/hand-landmarker";
 import { toFrameFeature } from "../../core/feature-normalizer";
-import { assessLandmarkQuality } from "../../core/landmark-reliability";
+import { assessLandmarkQuality, describeUnreliableState } from "../../core/landmark-reliability";
 import { createInitialMADProfile } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
 import { generateFeedback } from "../../core/feedback-generator";
 import { loadProfiles } from "../indexeddb-storage";
-import { describePostureDetail, describePostureLabel } from "../ui/posture-copy";
+import {
+  describePostureDetail,
+  describePostureLabel,
+  describePresenceDetail,
+  describePresenceLabel,
+} from "../ui/posture-copy";
 import type { FrameFeature, MADProfile } from "../../core/types";
 
 // Headless counterpart to product-main.ts, run in a hidden Electron
@@ -97,6 +102,13 @@ async function main(): Promise<void> {
     x: stored.cameraProfile.shoulderCenterX,
     y: stored.cameraProfile.shoulderCenterY,
   };
+  // Separate from the posture-alert cooldown above: fires the fairy for
+  // "no person in frame at all" instead of a bad-posture nudge. The two
+  // never overlap (this only runs while landmarks aren't reliable), so
+  // they can't fight over the same overlay.
+  let noPersonSince: number | null = null;
+  let noPersonFairyShowing = false;
+  let noPersonFairyLastShownAt = 0;
 
   function loop(): void {
     const timestamp = performance.now();
@@ -105,13 +117,36 @@ async function main(): Promise<void> {
     const quality = assessLandmarkQuality(landmarks, timestamp);
 
     if (!quality.reliable || !landmarks) {
+      const wasTracking = previousFeature !== null;
       previousFeature = null;
       // trackedAnchor deliberately kept as-is through a brief dropout —
       // see the matching note in product-main.ts's loop().
+      const presenceState = describeUnreliableState(quality);
+
+      if (presenceState === "NO_PERSON") {
+        if (noPersonSince === null) noPersonSince = timestamp;
+        const sustainedMs = timestamp - noPersonSince;
+        const canRetrigger =
+          !noPersonFairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
+        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+          window.electronAPI.sendPostureAlert({
+            title: describePresenceLabel(presenceState, wasTracking),
+            message: describePresenceDetail(presenceState, wasTracking),
+          });
+          noPersonFairyLastShownAt = timestamp;
+          noPersonFairyShowing = true;
+        }
+      } else {
+        noPersonSince = null;
+        noPersonFairyShowing = false;
+      }
+
       setTimeout(loop, LOOP_INTERVAL_MS);
       return;
     }
 
+    noPersonSince = null;
+    noPersonFairyShowing = false;
     trackedAnchor = anchorFromLandmarks(landmarks) ?? trackedAnchor;
 
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);

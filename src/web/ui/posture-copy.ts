@@ -55,3 +55,30 @@ const POSTURE_LABELS: Partial<Record<string, string>> = {
 export function describePostureLabel(event: DetectionEvent): string {
   return (event.postureType && POSTURE_LABELS[event.postureType]) || "자세를 확인해주세요";
 }
+
+// Copy for landmark-reliability's "NO_PERSON" / "UNKNOWN" states (see
+// describeUnreliableState in core/landmark-reliability). `wasTracking`
+// distinguishes "someone was just here and left" from "no one has shown up
+// yet this session" — the caller passes whether the previous frame had a
+// live tracked feature, since that's the only place with that context.
+export function describePresenceLabel(
+  state: "NO_PERSON" | "UNKNOWN",
+  wasTracking: boolean,
+): string {
+  if (state === "NO_PERSON") {
+    return wasTracking ? "화면에서 벗어났어요" : "사람이 인식되지 않고 있어요";
+  }
+  return "자세를 잘 인식하지 못하고 있어요";
+}
+
+export function describePresenceDetail(
+  state: "NO_PERSON" | "UNKNOWN",
+  wasTracking: boolean,
+): string {
+  if (state === "NO_PERSON") {
+    return wasTracking
+      ? "카메라 화면 밖으로 나가신 것 같아요. 다시 화면 안으로 들어와 주세요."
+      : "카메라에 사람이 보이지 않아요. 화면에 잘 나오는지 확인해주세요.";
+  }
+  return "카메라 각도나 조명을 조금 조정해보세요.";
+}
