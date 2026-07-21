@@ -53,8 +53,10 @@
       "createStartMenuShortcut": true
     },
     "mac": {
-      "target": ["dmg", "zip"],
-      "arch": "universal",
+      "target": [
+        { "target": "dmg", "arch": ["universal"] },
+        { "target": "zip", "arch": ["universal"] }
+      ],
       "category": "public.app-category.healthcare-fitness",
       "extendInfo": {
         "NSCameraUsageDescription": "카메라로 자세를 인식해서 알려드리기 위해 필요합니다."
