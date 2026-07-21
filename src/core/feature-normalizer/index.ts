@@ -1,6 +1,7 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { FrameFeature } from "../types";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
+import { HAND_LANDMARK_INDEX } from "../../web/camera-adapter/hand-landmarker";
 import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 
 // How much each frame's smoothed value moves toward the raw reading —
@@ -32,18 +33,25 @@ const JUMP_ENERGY_THRESHOLD = 25;
 // smoothing/jump-rejection and lets this compute a real motionEnergy
 // value; omit it (or pass null) to get an unsmoothed first reading and
 // motionEnergy 0, e.g. on the first frame or right after a reliability gap.
+//
+// `handLandmarks` is HandLandmarker's per-frame result.landmarks (one
+// 21-point array per detected hand, up to 2) — a separate model pass from
+// the Pose landmarks above. Omit it when the hand model isn't wired up
+// (e.g. in tests): handFaceDistance/handShoulderDistance just stay
+// undefined, same as any other missing-landmark case.
 export function toFrameFeature(
   landmarks: NormalizedLandmark[],
   timestamp: number,
   previous?: FrameFeature | null,
+  handLandmarks?: NormalizedLandmark[][],
 ): FrameFeature | null {
   const nose = landmarks[LANDMARK_INDEX.nose];
   const leftEye = landmarks[LANDMARK_INDEX.leftEye];
   const rightEye = landmarks[LANDMARK_INDEX.rightEye];
   const leftEar = landmarks[LANDMARK_INDEX.leftEar];
   const rightEar = landmarks[LANDMARK_INDEX.rightEar];
-  const leftWrist = landmarks[LANDMARK_INDEX.leftWrist];
-  const rightWrist = landmarks[LANDMARK_INDEX.rightWrist];
+  const mouthLeft = landmarks[LANDMARK_INDEX.mouthLeft];
+  const mouthRight = landmarks[LANDMARK_INDEX.mouthRight];
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!nose || !leftShoulder || !rightShoulder) return null;
@@ -76,9 +84,9 @@ export function toFrameFeature(
   const earsReliable =
     isVisible(leftEar, RELIABILITY_THRESHOLDS.earMinConfidence) &&
     isVisible(rightEar, RELIABILITY_THRESHOLDS.earMinConfidence);
-  const wristsReliable =
-    isVisible(leftWrist, RELIABILITY_THRESHOLDS.wristMinConfidence) ||
-    isVisible(rightWrist, RELIABILITY_THRESHOLDS.wristMinConfidence);
+  const mouthReliable =
+    isVisible(mouthLeft, RELIABILITY_THRESHOLDS.mouthMinConfidence) &&
+    isVisible(mouthRight, RELIABILITY_THRESHOLDS.mouthMinConfidence);
 
   // Matches landmark-reliability's confidence definition (need_discussion
   // #2): only the required landmarks (nose, both shoulders) determine frame
@@ -116,6 +124,15 @@ export function toFrameFeature(
   const headCenterX = faceCenterX ?? earCenterX ?? nose.x;
   const headCenterY = faceCenterY ?? earCenterY ?? nose.y;
 
+  // Mouth center: closest available proxy to the chin (see LANDMARK_INDEX),
+  // used only for handFaceDistance below — the eye/ear-based headCenter
+  // above already backs several other, separately-tuned features and
+  // shifting its definition would move all of them at once.
+  const mouthCenterX =
+    mouthReliable && mouthLeft && mouthRight ? (mouthLeft.x + mouthRight.x) / 2 : undefined;
+  const mouthCenterY =
+    mouthReliable && mouthLeft && mouthRight ? (mouthLeft.y + mouthRight.y) / 2 : undefined;
+
   const rawShoulderAsymmetry =
     shoulderWidth > 0 ? (leftShoulder.y - rightShoulder.y) / shoulderWidth : 0;
   const rawHeadXRatio = shoulderWidth > 0 ? (headCenterX - shoulderCenterX) / shoulderWidth : 0;
@@ -151,27 +168,34 @@ export function toFrameFeature(
     eyeDistance !== undefined && eyeDistance > 0 ? shoulderWidth / eyeDistance : undefined;
 
   // Hand-relative features (turtle-neck-with-chin-resting rules): pick
-  // whichever visible wrist sits closer to the head, since only one hand is
-  // ever actually near the face/chin at a time — the other arm may be
-  // resting on a desk or out of frame entirely.
+  // whichever detected hand's palm-center point (HandLandmarker's
+  // MIDDLE_FINGER_MCP, index 9 — steadier than any single fingertip) sits
+  // closer to the mouth, since only one hand is ever actually near the
+  // face/chin at a time — the other arm may be resting on a desk or out of
+  // frame entirely. Distance to the mouth (falling back to the eye/ear-based
+  // headCenter when the mouth isn't reliable) rather than the wrist, since
+  // the wrist is well below the actual point of contact for a real chin
+  // rest — confirmed live that wrist-based distance couldn't tell a
+  // resting hand from one merely held up near the face.
+  const chinReferenceX = mouthCenterX ?? headCenterX;
+  const chinReferenceY = mouthCenterY ?? headCenterY;
   let rawHandFaceDistance: number | undefined;
   let rawHandShoulderDistance: number | undefined;
-  if (wristsReliable) {
-    const candidates = [leftWrist, rightWrist].filter(
-      (wrist): wrist is NormalizedLandmark =>
-        wrist !== undefined && isVisible(wrist, RELIABILITY_THRESHOLDS.wristMinConfidence),
-    );
-    const chosenWrist = candidates.reduce((closest, candidate) =>
-      Math.hypot(candidate.x - headCenterX, candidate.y - headCenterY) <
-      Math.hypot(closest.x - headCenterX, closest.y - headCenterY)
-        ? candidate
-        : closest,
-    );
-    if (shoulderWidth > 0) {
+  if (handLandmarks && handLandmarks.length > 0 && shoulderWidth > 0) {
+    const candidates = handLandmarks
+      .map((hand) => hand[HAND_LANDMARK_INDEX.middleFingerMcp])
+      .filter((point): point is NormalizedLandmark => point !== undefined);
+    if (candidates.length > 0) {
+      const chosenHand = candidates.reduce((closest, candidate) =>
+        Math.hypot(candidate.x - chinReferenceX, candidate.y - chinReferenceY) <
+        Math.hypot(closest.x - chinReferenceX, closest.y - chinReferenceY)
+          ? candidate
+          : closest,
+      );
       rawHandFaceDistance =
-        Math.hypot(chosenWrist.x - headCenterX, chosenWrist.y - headCenterY) / shoulderWidth;
+        Math.hypot(chosenHand.x - chinReferenceX, chosenHand.y - chinReferenceY) / shoulderWidth;
       rawHandShoulderDistance =
-        Math.hypot(chosenWrist.x - shoulderCenterX, chosenWrist.y - shoulderCenterY) /
+        Math.hypot(chosenHand.x - shoulderCenterX, chosenHand.y - shoulderCenterY) /
         shoulderWidth;
     }
   }
@@ -244,6 +268,14 @@ export function toFrameFeature(
   const headXOffset = smooth(rawHeadXOffset, previous?.headXOffset);
   const shoulderXOffset = smooth(rawShoulderXOffset, previous?.shoulderXOffset);
   const shoulderYOffset = smooth(rawShoulderYOffset, previous?.shoulderYOffset);
+  // Raw (not shoulderWidth-divided) screen position — deliberately NOT
+  // translation-invariant, unlike shoulderXOffset/YOffset above. Needed for
+  // ARMREST_LEAN: telling a real armrest lean (diagonal screen movement,
+  // bodyScale unchanged) apart from the chair being pushed back diagonally
+  // (same diagonal screen movement, but bodyScale shrinks) requires the raw
+  // direction of on-screen movement, not a scale-normalized ratio.
+  const shoulderCenterXFeature = smooth(shoulderCenterX, previous?.shoulderCenterX);
+  const shoulderCenterYFeature = smooth(shoulderCenterY, previous?.shoulderCenterY);
   const bodyScale = smooth(rawBodyScale, previous?.bodyScale);
   const faceToShoulderRatio =
     rawFaceToShoulderRatio !== undefined
@@ -303,6 +335,8 @@ export function toFrameFeature(
     headXOffset,
     shoulderXOffset,
     shoulderYOffset,
+    shoulderCenterX: shoulderCenterXFeature,
+    shoulderCenterY: shoulderCenterYFeature,
     bodyScale,
     ...(faceToShoulderRatio !== undefined ? { faceToShoulderRatio } : {}),
     ...(pitchProxy !== undefined ? { pitchProxy } : {}),

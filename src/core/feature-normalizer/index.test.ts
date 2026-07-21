@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { LANDMARK_INDEX } from "../../web/camera-adapter/pose-landmarker";
+import { HAND_LANDMARK_INDEX } from "../../web/camera-adapter/hand-landmarker";
 import { RELIABILITY_THRESHOLDS } from "../landmark-reliability";
 import { toFrameFeature } from "./index";
 
@@ -17,6 +18,8 @@ function createLandmarks(
   landmarks[LANDMARK_INDEX.rightEye] = point(0.52, 0.38, 1);
   landmarks[LANDMARK_INDEX.leftEar] = point(0.45, 0.4, 1);
   landmarks[LANDMARK_INDEX.rightEar] = point(0.55, 0.4, 1);
+  landmarks[LANDMARK_INDEX.mouthLeft] = point(0.48, 0.44, 1);
+  landmarks[LANDMARK_INDEX.mouthRight] = point(0.52, 0.44, 1);
   landmarks[LANDMARK_INDEX.leftShoulder] = point(0.4, 0.6, 1);
   landmarks[LANDMARK_INDEX.rightShoulder] = point(0.6, 0.6, 1);
   landmarks[LANDMARK_INDEX.leftWrist] = point(0.35, 0.9, 1);
@@ -27,6 +30,15 @@ function createLandmarks(
   }
 
   return landmarks;
+}
+
+// HandLandmarker's per-hand result: a 21-point array, only
+// HAND_LANDMARK_INDEX.middleFingerMcp (the palm-center point actually used)
+// needs a realistic position for these tests.
+function createHand(middleFingerMcp: NormalizedLandmark): NormalizedLandmark[] {
+  const hand: NormalizedLandmark[] = new Array(21).fill(point(0, 0, 1));
+  hand[HAND_LANDMARK_INDEX.middleFingerMcp] = middleFingerMcp;
+  return hand;
 }
 
 describe("toFrameFeature", () => {
@@ -122,13 +134,12 @@ describe("toFrameFeature", () => {
     expect(feature?.relativeShoulderScale).toBeUndefined();
   });
 
-  it("computes handFaceDistance/handShoulderDistance using whichever wrist is closer to the head", () => {
-    const landmarks = createLandmarks({
-      leftWrist: point(0.5, 0.42, 1), // right next to the face/chin
-      rightWrist: point(0.65, 0.9, 1), // resting far away, e.g. on a desk
-    });
+  it("computes handFaceDistance/handShoulderDistance using whichever hand's palm point is closer to the mouth", () => {
+    const landmarks = createLandmarks();
+    const nearHand = createHand(point(0.5, 0.46, 1)); // right next to the mouth/chin
+    const farHand = createHand(point(0.65, 0.9, 1)); // resting far away, e.g. on a desk
 
-    const feature = toFrameFeature(landmarks, 0);
+    const feature = toFrameFeature(landmarks, 0, null, [farHand, nearHand]);
 
     expect(feature?.handFaceDistance).toBeDefined();
     expect(feature?.handShoulderDistance).toBeDefined();
@@ -136,13 +147,10 @@ describe("toFrameFeature", () => {
     expect(feature?.handFaceDistance ?? Infinity).toBeLessThan(1);
   });
 
-  it("omits handFaceDistance/handShoulderDistance when neither wrist is reliable", () => {
-    const landmarks = createLandmarks({
-      leftWrist: point(0.35, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
-      rightWrist: point(0.65, 0.9, RELIABILITY_THRESHOLDS.wristMinConfidence - 0.1),
-    });
+  it("omits handFaceDistance/handShoulderDistance when no hand is detected", () => {
+    const landmarks = createLandmarks();
 
-    const feature = toFrameFeature(landmarks, 0);
+    const feature = toFrameFeature(landmarks, 0, null, []);
 
     expect(feature?.handFaceDistance).toBeUndefined();
     expect(feature?.handShoulderDistance).toBeUndefined();

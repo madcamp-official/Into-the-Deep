@@ -77,6 +77,8 @@ export type LandmarkName =
   | "rightEye"
   | "leftEar"
   | "rightEar"
+  | "mouthLeft"
+  | "mouthRight"
   | "leftShoulder"
   | "rightShoulder"
   | "leftHip"
@@ -321,5 +323,6 @@ export interface ScenarioLabel {
     | "BACKWARD_LEAN"
     | "CHIN_TUCK"
     | "TORSO_TWIST"
-    | "SHOULDERS_ONLY_TWIST";
+    | "SHOULDERS_ONLY_TWIST"
+    | "ARMREST_LEAN";
 }

@@ -24,6 +24,16 @@ const PROFILE_FEATURES = [
   "correctedYaw",
   "forwardLeanProxy",
   "shoulderWidthRatio",
+  // Missing from this list meant CHIN_REST's handFaceDistance condition had
+  // no CALIBRATION center to normalize against, so it always scored
+  // undefined and the rule could never match — confirmed live via the
+  // capture button (feature values present, no score shown).
+  "handFaceDistance",
+  "handShoulderDistance",
+  // Needed as calibration baselines for ARMREST_LEAN's raw (non-scale-
+  // normalized) screen-position conditions.
+  "shoulderCenterX",
+  "shoulderCenterY",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {

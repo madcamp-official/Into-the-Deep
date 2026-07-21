@@ -3,7 +3,6 @@ import type { LandmarkName, PostureRule } from "../types";
 const CORE: LandmarkName[] = ["nose", "leftShoulder", "rightShoulder"];
 const EYES: LandmarkName[] = [...CORE, "leftEye", "rightEye"];
 const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
-const HANDS: LandmarkName[] = [...CORE, "leftWrist", "rightWrist"];
 
 // Thresholds are normalized deviations (feature delta / feature MAD). They
 // are intentionally conservative starting values for development-session tuning.
@@ -21,7 +20,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
+      // Re-added with a wider threshold than the earlier attempt (removed
+      // above): live testing confirmed moving substantially closer to the
+      // camera (no real posture change) scores bodyScale ~3.14, while
+      // genuine forward-head captures collected so far stayed under ~1.5
+      // (one outlier at 1.35) since craning the head forward only brings a
+      // *little* of the torso along with it. 2 sits in that gap — loose
+      // enough not to repeat the old "blocked genuine detections" failure,
+      // tight enough to exclude a real whole-body camera-distance change.
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -84,7 +92,25 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // NORMAL_WORK/SETTLING forwardLeanProxy averages 0.36-0.51, so 0.5 was
     // firing on ordinary noise. Real FORWARD_LEAN in the same session
     // averaged 4.17, so 2 keeps a safe margin on both sides.
-    required: [{ feature: "forwardLeanProxy", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+    //
+    // Lowered again 2 -> 1.2: a live, deliberately deep lean (post-
+    // recalibration) only scored 1.44 — this calibration's MAD landed
+    // higher than the jsonl session's did (same instability seen
+    // repeatedly with other rules this session), so 2 was too strict for
+    // this MAD basis. 1.2 clears it with margin while staying well above
+    // the jsonl session's ~0.5 NORMAL_WORK ceiling.
+    // bodyScale GT added: the user's physical distinction from FORWARD_HEAD
+    // — leaning the whole torso forward brings the shoulders closer too
+    // (bodyScale rises), while a pure turtle neck leaves shoulder distance
+    // roughly unchanged (bodyScale flat/negative) and only the face grows.
+    // Without this, a genuine FORWARD_HEAD case (bodyScale -0.10) lost to
+    // FORWARD_LEAN's undiscounted priority whenever pitchProxy was also
+    // elevated — confirmed live. Real FORWARD_LEAN captures so far scored
+    // bodyScale 0.87/1.52, so 0.3 sits safely below both.
+    required: [
+      { feature: "forwardLeanProxy", operator: "GT", threshold: 1.2, reference: "CALIBRATION" },
+      { feature: "bodyScale", operator: "GT", threshold: 0.3, reference: "CALIBRATION" },
+    ],
     supporting: ["bodyCompressionRatio", "headYRatio"],
     reason: "upper body is leaning forward",
   },
@@ -106,12 +132,26 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // conditions together (torso actually moved away from the camera, not
     // just the face angle changing) fixes both the false positives and
     // the HEAD_BACK/HEAD_TURN starvation without touching those rules.
+    // shoulderWidthRatio threshold -1.5 -> -1.3: three live captures of a
+    // genuine sustained backward lean scored -1.82/-1.41/-1.40 — two of
+    // three fell just short of -1.5, failing this rule's own required
+    // condition outright (not just losing on evidence score). -1.3 clears
+    // all three while staying well past HEAD_BACK/HEAD_TURN's reference
+    // values (-0.51/-0.91) for this same feature.
     required: [
       { feature: "faceToShoulderRatio", operator: "LT", threshold: -1, reference: "CALIBRATION" },
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.5, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.3, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy"],
     reason: "upper body is leaning backward",
+    // Confirmed live: leaning back in a chair naturally also pitches the
+    // head back (HEAD_BACK's pitchProxy) and nudges correctedYaw past
+    // TORSO_TWIST's threshold, so even when both of *this* rule's own
+    // (more specific, 2-condition) requirements clear, its evidence score
+    // sat close enough to those two that the ambiguity gate returned
+    // UNKNOWN instead of picking a winner. priority 1.3 gives a genuine
+    // double-condition match enough of an edge to win outright.
+    priority: 1.3,
   },
   {
     postureType: "HEAD_TURN",
@@ -147,7 +187,18 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // but individual frames swing well past 1.2 during natural movement).
     // Real HEAD_TILT in the same session averaged -12.85, so 2.2 keeps a
     // large margin on that side.
-    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 2.2, reference: "CALIBRATION" }],
+    //
+    // Raised again 2.2 -> 5: live capture-button testing found FORWARD_HEAD
+    // reliably swallowed by this rule whenever a forward-head/turtle-neck
+    // hold incidentally produced some head roll too (headRoll scores -3.12,
+    // -2.70 across two separate attempts) — FORWARD_HEAD's priority (0.4,
+    // see above) couldn't outweigh even a marginal HEAD_TILT match. A
+    // deliberate, roll-only head tilt (no forward-head component) instead
+    // scored -9.19/+8.94 in the same session — a clean gap above the
+    // contamination ceiling, so 5 excludes the forward-head side-effect
+    // while keeping genuine tilts (which score far higher) comfortably
+    // matched.
+    required: [{ feature: "headRoll", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" }],
     supporting: ["shoulderTilt"],
     reason: "head is tilted relative to the calibrated direction",
   },
@@ -160,45 +211,65 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     supporting: ["shoulderAsymmetry"],
     reason: "shoulder heights are asymmetric",
   },
-  {
-    postureType: "ROUNDED_SHOULDERS",
-    // EYES, not just CORE: relativeShoulderScale needs eye distance, so
-    // the rule should defer (not silently fail to match) when eyes aren't
-    // reliable.
-    requiredLandmarks: EYES,
-    // Tried shoulderWidthRatio LT -2 (theory: filters out pure
-    // camera-distance changes) and relativeShoulderScale alone at various
-    // thresholds/priorities while replaying session-1784560098508.jsonl.
-    // Neither held up: shoulderWidthRatio barely differs from NORMAL_WORK
-    // for real ROUNDED_SHOULDERS (-0.24 vs -0.22), and relativeShoulderScale
-    // swings even harder for several *other* postures (FORWARD_LEAN
-    // -31.58, SHOULDERS_ONLY_TWIST -33.76, CHIN_REST -17.52, FORWARD_HEAD
-    // -14.14 — all bigger in magnitude than genuine ROUNDED_SHOULDERS'
-    // own -8.61), so loosening it enough to catch its own cases made it
-    // swallow those other rules instead, and tightening/deprioritizing it
-    // enough to stop that made it miss most of its own cases again.
-    // Left as the (still imperfect, ~0% recall but at least not
-    // disruptive) dual-condition version pending a real per-feature MAD
-    // recalibration — relativeShoulderScale's default MAD (0.04) looks too
-    // small for its actual natural variance given how wildly it swings
-    // across every label.
-    required: [
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
-      { feature: "relativeShoulderScale", operator: "LT", threshold: -1, reference: "CALIBRATION" },
-    ],
-    supporting: ["faceToShoulderRatio", "shoulderTilt"],
-    reason: "shoulder shape is narrower than the calibrated posture",
-  },
+  // ROUNDED_SHOULDERS intentionally omitted: both candidate signals failed
+  // to discriminate it, confirmed twice now (session-1784560098508.jsonl
+  // replay, then again with live capture-button testing on a real rounded-
+  // shoulders hold). shoulderWidthRatio barely moves for genuine rounded
+  // shoulders (jsonl replay: -0.24 vs NORMAL_WORK's -0.22; live capture:
+  // score -0.37, nowhere near the -2 the rule needed). relativeShoulderScale
+  // does move (live capture: -10.10), but it swings just as hard or harder
+  // for several *other* postures (jsonl replay averages: FORWARD_LEAN
+  // -31.58, SHOULDERS_ONLY_TWIST -33.76, CHIN_REST -17.52, FORWARD_HEAD
+  // -14.14, all bigger in magnitude than genuine ROUNDED_SHOULDERS' own
+  // -8.61) — the live capture landed in that same contaminated range and
+  // matched as FORWARD_HEAD instead. A z-axis (shoulder-depth) alternative
+  // was also tried and abandoned (didn't move in the expected direction on
+  // live testing). Stays unimplemented until a feature actually separates
+  // it from FORWARD_HEAD/FORWARD_LEAN/CHIN_REST/SHOULDERS_ONLY_TWIST.
   {
     postureType: "CHIN_REST",
-    requiredLandmarks: HANDS,
-    required: [{ feature: "handFaceDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" }],
+    // CORE, not HANDS (both wrists): assessRuleReliability requires every
+    // listed landmark individually, but handFaceDistance/handShoulderDistance
+    // only need *one* wrist (landmark-reliability's wristsReliable is
+    // OR-based — resting a chin on one hand naturally leaves the other arm
+    // off-frame/unreliable). Requiring both wrists here made the rule defer
+    // whenever the *unused* wrist's confidence dipped, confirmed live via
+    // the capture button (strong handFaceDistance/handShoulderDistance
+    // scores present, but posture flickered between CHIN_REST and
+    // HEAD_DOWN/no-match frame to frame). scoreCondition already returns
+    // undefined (failing the required check) if handFaceDistance itself
+    // couldn't be computed, so no separate landmark gate is needed here.
+    requiredLandmarks: CORE,
+    // Switched off CALIBRATION reference: confirmed live twice now that
+    // handFaceDistance's calibration center is unstable across sessions —
+    // a hand raised near the face but well off to the side (raw distance
+    // ~1.72-1.75, farther than any genuine rest seen so far) scored MORE
+    // extreme (-24.86/-25.49) than actual chin-rests at a *closer* raw
+    // distance (~1.05-1.24, scored -12 to -35 in earlier sessions). The
+    // calibration median for this feature depends entirely on incidental
+    // hand position during that one 5-second window, so it isn't a
+    // meaningful "neutral" reference the way head/shoulder features are.
+    // ABS_LT against 0 with the default MAD (0.05) instead uses a fixed,
+    // session-independent scale: genuine rests normalized to ~21-25, the
+    // off-to-the-side raise to ~34-35 — 28 sits in the gap.
+    required: [{ feature: "handFaceDistance", operator: "ABS_LT", threshold: 28, reference: "ABSOLUTE" }],
+    // handShoulderDistance added after live capture-button testing: once
+    // profile-builder started giving handFaceDistance a real CALIBRATION
+    // center (see profile-builder fix), a genuine chin-rest scored
+    // handFaceDistance -20.91 and handShoulderDistance -12.73 — but the
+    // *old* anyOf (headRoll/pitchProxy) sat just under threshold (0.69x,
+    // 0.89x) and faceShapeDeformation is never computed at all (always
+    // undefined), so the rule still didn't fire. handShoulderDistance is a
+    // much stronger, already-reliable signal for the same "hand near
+    // face/shoulder" posture, so it's added here rather than loosening the
+    // weaker head-orientation conditions.
     anyOf: [
+      { feature: "handShoulderDistance", operator: "LT", threshold: -1, reference: "CALIBRATION" },
       { feature: "headRoll", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "pitchProxy", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "faceShapeDeformation", operator: "GT", threshold: 2, reference: "CALIBRATION" },
     ],
-    supporting: ["handShoulderDistance"],
+    supporting: [],
     reason: "hand is close to the face and the head shape indicates support",
   },
   {
@@ -241,6 +312,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["shoulderTilt", "shoulderDepthAsymmetry"],
     reason: "torso direction differs from the calibrated forward direction",
+    // A torso twist projects the shoulders narrower in 2D, which inflates
+    // faceToShoulderRatio the same way it does for FORWARD_HEAD — already
+    // documented from session-1784560098508.jsonl replay (SHOULDERS_ONLY_TWIST
+    // averaged faceToShoulderRatio 7.37) and reconfirmed live just now
+    // (5.01), both far past FORWARD_HEAD's own reference (~2.52). Even with
+    // both of this rule's own conditions clearing their thresholds, its
+    // evidence score (~1.10) still lost to FORWARD_HEAD's (~1.87) despite
+    // that rule's 0.4 priority discount, so this needs a larger boost than
+    // BACKWARD_LEAN's 1.3 did.
+    priority: 2.0,
   },
   {
     postureType: "SHOULDERS_ONLY_TWIST",
@@ -251,5 +332,37 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     ],
     supporting: ["shoulderWidthRatio", "shoulderTilt"],
     reason: "shoulders rotate while the head remains forward",
+  },
+  {
+    postureType: "ARMREST_LEAN",
+    requiredLandmarks: CORE,
+    // Distinguishes a real armrest lean from two visually similar but
+    // non-posture cases (need_discussion #6: environment changes shouldn't
+    // alert on their own):
+    //   - chair slid sideways: shoulderCenterX changes, but shoulderCenterY
+    //     and bodyScale both stay put (pure lateral translation only).
+    //   - chair pushed back diagonally: shoulderCenterX/Y both change, same
+    //     as a real lean, but bodyScale shrinks too (moved farther from the
+    //     camera).
+    // A real lean onto one armrest moves the body diagonally *down* on
+    // screen (shoulderCenterY increases, MediaPipe y grows downward) plus
+    // sideways (shoulderCenterX), while staying the same distance from the
+    // camera (bodyScale unchanged) — the combination of "moved diagonally"
+    // AND "didn't change size" is what SIDE_SHIFT (still unimplemented)
+    // couldn't get from lateral position alone.
+    // shoulderCenterY threshold 2 -> 0.7: 6 live captures of a genuine
+    // armrest lean scored only 0.97-1.42 on this feature (X moved much more
+    // than Y for this user's chair/desk setup — 3.25-4.39), so 2 was too
+    // strict and blocked every one of them. 0.7 sits under the observed
+    // range with some margin. shoulderCenterX (3.25-4.39) and bodyScale
+    // (-0.06 to -0.66, all well under 1.5) already held up against the same
+    // captures, unchanged.
+    required: [
+      { feature: "shoulderCenterY", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
+      { feature: "shoulderCenterX", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 1.5, reference: "CALIBRATION" },
+    ],
+    supporting: ["shoulderTilt", "shoulderAsymmetry"],
+    reason: "body has shifted diagonally to one side without moving closer to or farther from the camera",
   },
 ];

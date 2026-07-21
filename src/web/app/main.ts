@@ -4,6 +4,10 @@ import {
   createPoseLandmarker,
   detectPoseForVideoFrame,
 } from "../camera-adapter/pose-landmarker";
+import {
+  createHandLandmarker,
+  detectHandsForVideoFrame,
+} from "../camera-adapter/hand-landmarker";
 import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay";
 import { toFrameFeature } from "../../core/feature-normalizer";
 import {
@@ -49,6 +53,8 @@ import type {
   CameraRawFeature,
   DetectionEvent,
   FrameFeature,
+  MADProfile,
+  PostureFeatureName,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
@@ -117,6 +123,8 @@ async function main() {
   const recordButton = document.createElement("button");
   recordButton.textContent = "측정 시작";
   recordButton.disabled = true;
+  const captureButton = document.createElement("button");
+  captureButton.textContent = "Feature 캡처";
   const automatedSessionButton = document.createElement("button");
   automatedSessionButton.textContent = "자동 Development Session";
   automatedSessionButton.disabled = true;
@@ -133,6 +141,9 @@ async function main() {
   thresholdFileInput.hidden = true;
   const thresholdSweepOutput = document.createElement("pre");
   thresholdSweepOutput.className = "threshold-sweep-output";
+  const captureOutput = document.createElement("pre");
+  captureOutput.className = "capture-output";
+  captureOutput.textContent = "자세를 취한 채로 \"Feature 캡처\"를 누르면 그 순간의 feature 값이 여기 쌓입니다.";
   downloadButton.textContent = "로그 다운로드";
   downloadButton.disabled = true;
   const modeButton = document.createElement("button");
@@ -174,6 +185,7 @@ async function main() {
     { value: "CHIN_TUCK", text: "Chin tuck" },
     { value: "TORSO_TWIST", text: "Torso twist" },
     { value: "SHOULDERS_ONLY_TWIST", text: "Shoulders only twist" },
+    { value: "ARMREST_LEAN", text: "Armrest lean" },
   ];
   for (const scenario of scenarios) {
     const option = document.createElement("option");
@@ -189,6 +201,7 @@ async function main() {
     calibrateButton,
     updateBaselineButton,
     recordButton,
+    captureButton,
     automatedSessionButton,
     cameraSessionButton,
     downloadButton,
@@ -209,7 +222,14 @@ async function main() {
   sessionInstruction.className = "session-instruction";
   sessionInstruction.textContent = "자동 Development Session을 시작하면 안내가 표시됩니다.";
 
-  sidePanel.append(controls, sessionInstruction, status, thresholdSweepOutput, cameraVerificationOutput);
+  sidePanel.append(
+    controls,
+    sessionInstruction,
+    status,
+    captureOutput,
+    thresholdSweepOutput,
+    cameraVerificationOutput,
+  );
   layout.append(canvas, sidePanel);
   app.append(video, layout, alertBannerRow);
   addLayoutStyles();
@@ -227,6 +247,9 @@ async function main() {
 
   status.textContent = "loading MediaPipe pose landmarker...";
   const landmarker = await createPoseLandmarker();
+
+  status.textContent = "loading MediaPipe hand landmarker...";
+  const handLandmarker = await createHandLandmarker();
 
   status.textContent = "running";
 
@@ -253,6 +276,9 @@ async function main() {
   let currentSessionType: SessionType = "POSTURE";
   let developmentAnalysisSummary = "";
   let cameraVerificationMode = false;
+  let latestEvent: DetectionEvent | null = null;
+  let latestV2Event: DetectionEvent | null = null;
+  let captureCount = 0;
 
   const recorder = new SessionRecorder();
   const scenarioLabeler = new ScenarioLabeler();
@@ -348,6 +374,24 @@ async function main() {
     } else {
       finishRecording();
     }
+  };
+
+  captureButton.onclick = () => {
+    if (!previousFeature) {
+      captureOutput.textContent = [
+        `[capture failed: no reliable frame] (${new Date().toLocaleTimeString()})`,
+        "",
+        captureOutput.textContent,
+      ].join("\n");
+      return;
+    }
+
+    captureCount += 1;
+    const header =
+      `--- capture #${captureCount} (${new Date().toLocaleTimeString()}) ` +
+      `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ---`;
+    const body = formatFeatureSnapshot(previousFeature, profile, madProfile);
+    captureOutput.textContent = [header, body, "", captureOutput.textContent].join("\n");
   };
 
   scenarioSelect.onchange = () => {
@@ -692,7 +736,8 @@ async function main() {
 
     drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
 
-    const feature = toFrameFeature(landmarks, timestamp, previousFeature);
+    const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
+    const feature = toFrameFeature(landmarks, timestamp, previousFeature, handResult.landmarks);
     previousFeature = feature;
 
     if (!feature) {
@@ -756,6 +801,8 @@ async function main() {
         );
       }
     }
+    latestEvent = event;
+    latestV2Event = v2Event;
 
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
@@ -902,6 +949,42 @@ function formatScore(score: number | undefined): string {
   return score === undefined ? "?" : score.toFixed(2);
 }
 
+// Lists every numeric FrameFeature value at capture time, alongside the
+// calibration-relative MAD score ((value - center) / MAD) the rule engine
+// actually checks — so a captured posture can be read off directly against
+// posture-rules/index.ts's thresholds instead of re-deriving it by hand.
+function formatFeatureSnapshot(
+  feature: FrameFeature,
+  profile: UserProfile | null,
+  madProfile: MADProfile,
+): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(feature)) {
+    if (typeof value !== "number" || key === "timestamp") continue;
+    const featureName = key as PostureFeatureName;
+    const score = normalizeFeature(
+      value,
+      profile?.originalCenters[featureName],
+      madProfile.values[featureName],
+    );
+    // Some rule conditions (e.g. CHIN_REST's handFaceDistance) use
+    // reference: "ABSOLUTE" (center 0) instead of CALIBRATION, which the
+    // `score` above doesn't reflect. Show it whenever the calibration
+    // center isn't set, so what's on screen matches what that condition
+    // actually sees.
+    const absoluteScore =
+      score === undefined
+        ? normalizeFeature(value, 0, madProfile.values[featureName])
+        : undefined;
+    lines.push(
+      `${key}: ${value.toFixed(3)}` +
+        (score !== undefined ? `  (score=${score.toFixed(2)})` : "") +
+        (absoluteScore !== undefined ? `  (abs=${absoluteScore.toFixed(2)})` : ""),
+    );
+  }
+  return lines.join("\n");
+}
+
 function getDeltaLine(
   label: string,
   currentValue: number | undefined,
@@ -1016,6 +1099,19 @@ function addLayoutStyles(): void {
       color: #e5e7eb;
     }
 
+    .capture-output {
+      box-sizing: border-box;
+      width: 100%;
+      max-height: 320px;
+      margin: 12px 0 0;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      font: 11px/1.45 monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+
     @media (max-width: 900px) {
       #app {
         padding: 16px;
@@ -1096,7 +1192,8 @@ function isDriftScenario(label: ScenarioLabel["label"]): boolean {
     label === "BACKWARD_LEAN" ||
     label === "CHIN_TUCK" ||
     label === "TORSO_TWIST" ||
-    label === "SHOULDERS_ONLY_TWIST";
+    label === "SHOULDERS_ONLY_TWIST" ||
+    label === "ARMREST_LEAN";
 }
 
 function isCameraScenario(label: ScenarioLabel["label"]): boolean {
