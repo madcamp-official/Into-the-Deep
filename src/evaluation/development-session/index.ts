@@ -79,9 +79,11 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 89, action: "SCENARIO_STARTED", label: "BACKWARD_LEAN" },
   { atSeconds: 92, action: "DRIFT_ONSET", label: "BACKWARD_LEAN" },
   { atSeconds: 102, action: "SCENARIO_ENDED", label: "BACKWARD_LEAN" },
-  { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
-  { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
-  { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
+  // HEAD_TURN disabled again for now (decided to drop it, not delete it —
+  // see posture-rules/index.ts):
+  // { atSeconds: 112, action: "SCENARIO_STARTED", label: "HEAD_TURN" },
+  // { atSeconds: 115, action: "DRIFT_ONSET", label: "HEAD_TURN" },
+  // { atSeconds: 125, action: "SCENARIO_ENDED", label: "HEAD_TURN" },
   { atSeconds: 135, action: "SCENARIO_STARTED", label: "HEAD_TILT" },
   { atSeconds: 138, action: "DRIFT_ONSET", label: "HEAD_TILT" },
   { atSeconds: 148, action: "SCENARIO_ENDED", label: "HEAD_TILT" },

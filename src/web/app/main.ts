@@ -31,12 +31,22 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // jitter from real motion — live captures showed a static ARMREST_LEAN
 // hold spike to 0.398 while a genuine mouse-reach frame read as low as
 // 0.190 (see posture-rule-detector's motionSustainMs comment). Raised
-// 0.2 -> 0.35 (still too sensitive in everyday use) -> 0.7: user explicitly
-// asked to push this well past any "correct" boundary — accepting that
-// some genuine motion (the low end of the 0.19-0.93 range seen live) will
-// no longer register as MOVING, in exchange for jitter almost never
-// triggering a hold.
-const V2_MOTION_ENERGY_GATE = 0.7;
+// 0.2 -> 0.35 (still too sensitive in everyday use) -> 0.7 -> 1.4 -> 1.0
+// (manually dialed back down after live testing at 1.4): user explicitly
+// asked to push this well past any "correct" boundary each time (frontal
+// calibration included — this gate is a single shared constant, not
+// frontal/side-specific), accepting that some genuine motion (the low end
+// of the 0.19-0.93 range seen live) will no longer register as MOVING, in
+// exchange for jitter almost never triggering a hold.
+const V2_MOTION_ENERGY_GATE = 1.0;
+
+// Below this, a calibration's averaged body-yaw angle is treated as
+// "facing forward" and the fixed-angle correction is skipped entirely
+// (see the fixedYawAngle comment in the main loop) — 20 degrees is well
+// above the noise floor a properly-frontal calibration's per-frame
+// self-estimates should average out to, but comfortably below any
+// deliberate side sit tested live (all >=30 degrees).
+const MIN_CORRECTED_YAW_ANGLE = (20 * Math.PI) / 180;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
@@ -1244,7 +1254,24 @@ async function main() {
     // baseline instead of a fresh per-frame estimate (see
     // correctBodyYaw/estimateBodyYawAngle's comments — the per-frame
     // estimate alone was confirmed too noisy).
-    const fixedYawAngle = calibrationFrames ? undefined : profile?.originalCenters.bodyYawAngle;
+    //
+    // Below MIN_CORRECTED_YAW_ANGLE, treat the calibration as "facing
+    // forward" and pass a fixed 0 (no correction at all — the pre-this-
+    // feature behavior) rather than the tiny measured angle. User reported
+    // that applying the correction even for a roughly-frontal calibration
+    // made things noticeably worse than before this feature existed —
+    // only apply it once the averaged angle clears a "this was clearly a
+    // deliberate side sit" bar.
+    let fixedYawAngle: number | undefined;
+    if (calibrationFrames) {
+      fixedYawAngle = undefined; // self-estimate fresh per frame, for buildUserProfile to average
+    } else {
+      const calibratedYawAngle = profile?.originalCenters.bodyYawAngle;
+      fixedYawAngle =
+        calibratedYawAngle !== undefined && Math.abs(calibratedYawAngle) >= MIN_CORRECTED_YAW_ANGLE
+          ? calibratedYawAngle
+          : 0;
+    }
     const feature = toFrameFeature(
       correctedLandmarks,
       timestamp,
