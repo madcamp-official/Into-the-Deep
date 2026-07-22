@@ -1,3 +1,4 @@
+import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { startWebcam } from "../camera-adapter/webcam";
 import {
   countPersons,
@@ -12,6 +13,7 @@ import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay
 import {
   applyCameraCorrectionToHandLandmarks,
   applyCameraCorrectionToLandmarks,
+  estimateBodyYawAngle,
   toFrameFeature,
 } from "../../core/feature-normalizer";
 import {
@@ -28,10 +30,13 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // A single-frame motionEnergy threshold alone can't separate landmark
 // jitter from real motion — live captures showed a static ARMREST_LEAN
 // hold spike to 0.398 while a genuine mouse-reach frame read as low as
-// 0.190 (see posture-rule-detector's motionSustainMs comment). Gate stays
-// moderate; PostureRuleDetector's sustain-duration check is what actually
-// filters out single-frame noise.
-const V2_MOTION_ENERGY_GATE = 0.2;
+// 0.190 (see posture-rule-detector's motionSustainMs comment). Raised
+// 0.2 -> 0.35 (still too sensitive in everyday use) -> 0.7: user explicitly
+// asked to push this well past any "correct" boundary — accepting that
+// some genuine motion (the low end of the 0.19-0.93 range seen live) will
+// no longer register as MOVING, in exchange for jitter almost never
+// triggering a hold.
+const V2_MOTION_ENERGY_GATE = 0.7;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
@@ -308,6 +313,11 @@ async function main() {
   status.textContent = "running";
 
   let previousFeature: FrameFeature | null = null;
+  // Landmarks as fed into toFrameFeature (post camera-transform-correction,
+  // pre body-yaw-correction) — kept only so the capture button can show the
+  // computed body-yaw angle directly, to check live whether it's a stable
+  // estimate or noisy.
+  let previousLandmarks: NormalizedLandmark[] | null = null;
   let profile: UserProfile | null = null;
   let cameraProfile: CameraProfile | null = null;
   let profileCreatedAt: number | null = null;
@@ -514,9 +524,23 @@ async function main() {
     }
 
     captureCount += 1;
+    // Two different angles, not the same thing: `used` is the fixed,
+    // calibration-averaged angle toFrameFeature actually applied this frame
+    // (profile.originalCenters.bodyYawAngle, or undefined pre-calibration);
+    // `liveEstimate` is a fresh per-frame self-estimate purely for
+    // comparison (confirmed noisy on its own — that's why the fixed value
+    // exists), not what's driving correction.
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+    const usedAngleDeg = previousFeature?.bodyYawAngle !== undefined
+      ? toDeg(previousFeature.bodyYawAngle)
+      : undefined;
+    const liveEstimateRad = previousLandmarks ? estimateBodyYawAngle(previousLandmarks) : undefined;
+    const liveEstimateDeg = liveEstimateRad !== undefined ? toDeg(liveEstimateRad) : undefined;
     const header =
       `--- capture #${captureCount} (${new Date().toLocaleTimeString()}) ` +
-      `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ---`;
+      `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ` +
+      `bodyYaw(used)=${usedAngleDeg !== undefined ? `${usedAngleDeg.toFixed(1)}°` : "?"} ` +
+      `bodyYaw(live)=${liveEstimateDeg !== undefined ? `${liveEstimateDeg.toFixed(1)}°` : "?"} ---`;
     const body = formatFeatureSnapshot(previousFeature, profile, v0MadProfile, madProfile);
     captureOutput.textContent = [header, body, "", captureOutput.textContent].join("\n");
   };
@@ -1143,13 +1167,21 @@ async function main() {
     const correctedHands = correctionTransform
       ? applyCameraCorrectionToHandLandmarks(handResult.landmarks, correctionTransform)
       : handResult.landmarks;
+    // Calibration frames self-estimate their own body-yaw angle (fed into
+    // buildUserProfile's average); live frames reuse that fixed, averaged
+    // baseline instead of a fresh per-frame estimate (see
+    // correctBodyYaw/estimateBodyYawAngle's comments — the per-frame
+    // estimate alone was confirmed too noisy).
+    const fixedYawAngle = calibrationFrames ? undefined : profile?.originalCenters.bodyYawAngle;
     const feature = toFrameFeature(
       correctedLandmarks,
       timestamp,
       previousFeature,
       correctedHands,
+      fixedYawAngle,
     );
     previousFeature = feature;
+    previousLandmarks = correctedLandmarks;
 
     if (!feature) {
       movementClassifier.reset();
@@ -1220,26 +1252,16 @@ async function main() {
     );
     latestEvent = event;
     latestV2Event = v2Event;
-    const cameraStateKind = cameraAssessment.state === "RECALIBRATION_REQUIRED"
-      ? "bad"
-      : cameraAssessment.state === "UNKNOWN"
-        ? "unknown"
-        : "good";
 
+    // Alert banners always reflect V0/V2 posture judgment directly — no
+    // camera-recalibration/camera-movement/verification-mode banner
+    // overrides. (cameraAssessment is still computed and fed into the
+    // recorder and correction pipeline above; this only affects what the
+    // banners display.)
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
       setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
-    } else if (cameraAssessment.state === "RECALIBRATION_REQUIRED") {
-      setAlertBanner(v0AlertBanner, "bad", "Camera recalibration required");
-      setAlertBanner(v2AlertBanner, "bad", "Camera recalibration required");
-    } else if (
-      verificationActive ||
-      currentMotionPhase !== "STABLE" ||
-      cameraAssessment.state === "UNKNOWN"
-    ) {
-      setAlertBanner(v0AlertBanner, "idle", "Camera movement: posture judgment paused");
-      setAlertBanner(v2AlertBanner, "idle", "Camera movement: posture judgment paused");
-    } else if (!cameraVerificationMode) {
+    } else {
       // V0/V2 are judged and shown independently — they can (and are
       // expected to) disagree, that's the whole point of comparing them.
       if (event?.alert) {
@@ -1260,26 +1282,6 @@ async function main() {
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
-    } else {
-      const baselineReferenceStatus = verificationActive
-        ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} active`
-        : baselineAssessment
-          ? baselineVerificationKind
-            ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} complete`
-            : "calibration ready"
-          : backgroundReference
-            ? "not started"
-            : "unavailable";
-      setAlertBanner(
-        v0AlertBanner,
-        "idle",
-        `Camera baseline verification: ${baselineReferenceStatus}`,
-      );
-      setAlertBanner(
-        v2AlertBanner,
-        cameraStateKind,
-        `Camera state: ${cameraAssessment.state} (${cameraAssessment.motionPhase ?? "STABLE"})`,
-      );
     }
 
     const displayedCameraTransform = baselineAssessment?.transform ?? referenceTransform ?? cameraTransform;

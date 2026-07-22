@@ -249,8 +249,12 @@ function createFrame(timestamp: number, headXRatio: number, motionEnergy = 0.01)
 
 function createPostureProfile(): UserProfile {
   return {
-    originalCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0 },
-    adaptiveCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0 },
+    // bodyScale: 1 matches createPostureFrame's own default, so HEAD_TURN's
+    // bodyScale ABS_LT exclusion normalizes to 0 deviation (not undefined)
+    // for frames that don't override it — a "didn't move toward the
+    // camera" baseline, not a magic value.
+    originalCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0, bodyScale: 1 },
+    adaptiveCenters: { yawProxy: 0, headXRatio: 0, headRoll: 0, bodyScale: 1 },
     featureDeviations: {},
     calibrationDuration: 5000,
     validFrameCount: 100,

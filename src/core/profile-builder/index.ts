@@ -34,6 +34,13 @@ const PROFILE_FEATURES = [
   // normalized) screen-position conditions.
   "shoulderCenterX",
   "shoulderCenterY",
+  // Averaging the per-calibration-frame self-estimated body-yaw angle
+  // (see feature-normalizer's estimateBodyYawAngle) into one stable value
+  // is the whole point of the fixed-angle correction — a fresh per-frame
+  // estimate was confirmed live to swing ~27 degrees on a stationary
+  // subject, too noisy to use directly. Median (not circular mean) is fine
+  // here since real sitting angles don't wrap around +-180 degrees.
+  "bodyYawAngle",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {
