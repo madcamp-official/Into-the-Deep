@@ -47,6 +47,16 @@ import type { FrameFeature, MADProfile } from "../../core/types";
 // of retriggering on a cooldown. Mirrors product-main.ts so the web and
 // Electron builds behave the same.
 //
+// How long "normal posture" (event.alert going false) must be sustained
+// before the persisted bad-posture fairy is actually dismissed. V2's alert
+// flag can flicker false for a single frame even mid-bad-posture; without
+// this grace period a single clean frame would instantly dismiss the fairy
+// and then immediately re-trigger it (full entrance animation and all) the
+// next frame, reading as "it disappears before I can even read it." Only
+// applies to the recovery direction — a fresh bad-posture alert still shows
+// immediately, no delay, per V2's verdict. Mirrors product-main.ts.
+const POSTURE_RECOVERY_GRACE_MS = 2000;
+
 // "No person in frame" / "posture unreadable" alerts are a separate,
 // UI-owned judgment (not something V2 evaluates), so they keep their own
 // trigger delay and retrigger cooldown below.
@@ -128,6 +138,10 @@ async function main(): Promise<void> {
   // lets the loop refresh the bubble's text if the dominant issue changes
   // mid-alert without re-sending the alert every single frame.
   let fairyMessageKey: string | null = null;
+  // Wall-clock timestamp of the first consecutive event.alert===false frame
+  // since the fairy started showing — null whenever not currently waiting
+  // out POSTURE_RECOVERY_GRACE_MS. See loop() below.
+  let recoveryStreakStart: number | null = null;
   // Where the calibrated user's shoulders were last seen — seeded from the
   // camera profile's calibration median so tracking is correct from the
   // first frame, even if someone else is already in frame when this
@@ -232,6 +246,10 @@ async function main(): Promise<void> {
     detector.setMADProfile(madProfile);
 
     if (event.alert) {
+      // A fresh bad-posture verdict cancels any recovery grace period that
+      // was in progress — posture didn't actually stay fixed.
+      recoveryStreakStart = null;
+
       // event.alert is already V2's verdict that this posture has been
       // sustained long enough to count as bad — send it immediately, no
       // extra wait on top. Persists (no auto-hide) until posture is actually
@@ -252,10 +270,20 @@ async function main(): Promise<void> {
       }
     } else {
       if (fairyShowing) {
-        electronAPI.sendPostureAlertClear();
+        // V2 says posture is fine this frame, but don't trust a single
+        // clean frame — wait for POSTURE_RECOVERY_GRACE_MS of continuous
+        // "normal" before actually dismissing, so a brief flicker in V2's
+        // own alert signal can't instantly close (and then immediately
+        // re-open) the fairy.
+        if (recoveryStreakStart === null) recoveryStreakStart = timestamp;
+        const recoveredMs = timestamp - recoveryStreakStart;
+        if (recoveredMs >= POSTURE_RECOVERY_GRACE_MS) {
+          electronAPI.sendPostureAlertClear();
+          fairyShowing = false;
+          fairyMessageKey = null;
+          recoveryStreakStart = null;
+        }
       }
-      fairyShowing = false;
-      fairyMessageKey = null;
     }
 
     setTimeout(loop, LOOP_INTERVAL_MS);

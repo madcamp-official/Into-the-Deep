@@ -57,6 +57,16 @@ const MIN_CALIBRATION_FRAMES = 10;
 // as long as the bad posture does — see loop()'s event.alert branch — instead
 // of retriggering on a cooldown.
 //
+// How long "normal posture" (event.alert going false) must be sustained
+// before the persisted bad-posture fairy is actually dismissed. V2's alert
+// flag can flicker false for a single frame even mid-bad-posture; without
+// this grace period a single clean frame would instantly dismiss the fairy
+// and then immediately re-trigger it (full entrance animation and all) the
+// next frame, reading as "it disappears before I can even read it." Only
+// applies to the recovery direction — a fresh bad-posture alert still shows
+// immediately, no delay, per V2's verdict.
+const POSTURE_RECOVERY_GRACE_MS = 2000;
+
 // "No person in frame" / "posture unreadable" alerts are a separate,
 // UI-owned judgment (not something V2 evaluates), so they keep their own
 // trigger delay — quick to (re)fire since they don't persist-until-fixed.
@@ -301,6 +311,11 @@ async function main() {
   // lets the loop refresh the bubble's text if the dominant issue changes
   // mid-alert without re-calling fairy.show() on every single frame.
   let fairyMessageKey: string | null = null;
+  // Wall-clock timestamp of the first consecutive event.alert===false frame
+  // since the fairy started showing — null whenever not currently waiting
+  // out POSTURE_RECOVERY_GRACE_MS (either the fairy isn't showing, or
+  // event.alert just flipped back true and reset it). See loop() below.
+  let recoveryStreakStart: number | null = null;
   let loopStarted = false;
   // Separate from the posture-alert cooldown above: fires the fairy for
   // "no person in frame at all" instead of a bad-posture nudge. The two
@@ -462,6 +477,10 @@ async function main() {
     const feedback = generateFeedback(event);
 
     if (event.alert) {
+      // A fresh bad-posture verdict cancels any recovery grace period that
+      // was in progress — posture didn't actually stay fixed.
+      recoveryStreakStart = null;
+
       const label = SHOW_SPECIFIC_POSTURE_LABEL
         ? describePostureLabel(event)
         : "자세를 바로잡아주세요";
@@ -488,10 +507,20 @@ async function main() {
       }
     } else {
       if (fairyShowing) {
-        fairy.dismiss();
-        fairyShowing = false;
-        fairyMessageKey = null;
-        sessionAudio.notifyReturnToNormal();
+        // V2 says posture is fine this frame, but don't trust a single
+        // clean frame — wait for POSTURE_RECOVERY_GRACE_MS of continuous
+        // "normal" before actually dismissing, so a brief flicker in V2's
+        // own alert signal can't instantly close (and then immediately
+        // re-open) the fairy.
+        if (recoveryStreakStart === null) recoveryStreakStart = timestamp;
+        const recoveredMs = timestamp - recoveryStreakStart;
+        if (recoveredMs >= POSTURE_RECOVERY_GRACE_MS) {
+          fairy.dismiss();
+          fairyShowing = false;
+          fairyMessageKey = null;
+          recoveryStreakStart = null;
+          sessionAudio.notifyReturnToNormal();
+        }
       }
       setStatus("good", "정상 자세예요", "");
     }
