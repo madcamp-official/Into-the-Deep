@@ -3,7 +3,7 @@
 ## Build the Core
 핵심 기술 문제의 해결 과정과 성능, 정확도, 안정성 등의 개선 결과를 확인할 수 있는 실행 가능한 산출물 만들기.
 
-**산출물:** PostureCore — 웹캠 기반 개인화 자세 drift 탐지 코어 + 화면 위 요정 알림 UI ("PostureFairy")
+**산출물** PostureCore — 웹캠 기반 개인화 자세 drift 탐지 코어 + 화면 위 요정 알림 UI ("PostureFairy")
 
 ---
 
@@ -204,23 +204,14 @@ docs/             # 설계 노트, 발표/데모 자료
 
 ### Keep
 
-- **라이브 캡처 + 세션 리플레이 기반 검증**: threshold나 룰을 감으로 바꾸지 않고, 실제 캘리브레이션 세션을 JSONL로 녹화해서 groundTruth 라벨 기준 confusion matrix로 항상 전/후를 비교했다. 몇 개 캡처만 보고 판단했을 때 놓친 문제(예: NORMAL_WORK 오탐률)가 전체 세션 리플레이에서는 확연히 드러난 경우가 여러 번 있었다.
-- **V0(고정 threshold) / V2(개인화 MAD) 병행 비교 구조**: 같은 룰을 두 가지 MAD 정책으로 동시에 돌려서, 문제가 룰 자체에 있는지 V2의 MAD 적응 과정에 있는지 구분할 수 있었다(예: ARMREST_LEAN이 V0에서는 84% 정확한데 V2에서만 3%로 무너지는 걸 확인).
-- **정면/측면 캘리브레이션 규칙 완전 분리**: 처음엔 하나의 룰 세트로 두 경우를 다 처리하려다 서로의 수정이 계속 간섭했는데, `DEFAULT_POSTURE_RULES`/`SIDE_ANGLE_POSTURE_RULES`로 완전히 독립시킨 뒤로는 한쪽을 튜닝해도 다른 쪽이 깨지지 않았다.
+- **라이브 캡처 + 세션 리플레이 기반 검증**: threshold나 룰을 감으로 바꾸지 않고, 실제 캘리브레이션 세션을 JSONL로 녹화해서 groundTruth 라벨 기준 confusion matrix로 항상 전/후를 비교함
+- **V0(고정 threshold) / V2(개인화 MAD) 병행 비교 구조**: 같은 룰을 두 가지 MAD 정책으로 동시에 돌려서, 문제가 룰 자체에 있는지 V2의 MAD 적응 과정에 있는지 구분할 수 있었음.
 
 ### Problem
 
-- **새 feature 추가 시 등록 누락으로 인한 침묵 실패**: `faceSize`라는 새 feature를 추가하면서 MAD 기본값 테이블(`mad-profile`)에 등록하는 걸 빠뜨려, 관련 룰이 계속 조건 미달로 실패하는데도 에러 없이 조용히 안 되는 상태로 한동안 테스트가 진행됐다.
-- **작업 브랜치와 실제 실행 환경의 불일치**: dev 서버가 로컬 파일을 그대로 읽기 때문에, 코드를 커밋만 하고 main에 병합하지 않은 채로 "테스트해봤는데 안 고쳐졌다"는 상황이 여러 번 반복됐다. 실수로 main에 직접 커밋한 적도 있었다.
 - **자세 판정 규칙 간의 feature 중복**: FORWARD_HEAD/HEAD_DOWN/SHOULDER_ASYMMETRY/TORSO_TWIST 등 서로 다른 자세가 같은 feature(faceToShoulderRatio, pitchProxy, shoulderTilt 등)에서 비슷한 값을 보이는 경우가 많아, 우선순위 기반 경쟁이 예상과 다르게 뒤집히는 문제를 여러 차례 겪었다.
-- **캘리브레이션 각도에 따라 자세 신호의 부호 자체가 뒤집힘**: 같은 트위스트 동작인데도 캘리브레이션 각도/방향에 따라 어깨너비 feature가 늘어나기도 하고 줄어들기도 해서, 하나의 조건식으로 방향 무관하게 잡으려던 시도가 오히려 다른 자세와의 오탐을 늘렸다.
 
 ### Try
-
-- TORSO_TWIST의 반대 방향(어깨너비가 줄어드는 쪽) 트위스트도 잡을 수 있는 별도 신호 찾기.
-- ARMREST_LEAN이 V2에서 BACKWARD_LEAN에 먹히는 문제, HEAD_BACK/TORSO_TWIST가 서로 겹치는 문제 등 아직 남은 오탐 케이스 마저 해결.
-- 제품용 진입점(`product-main.ts`, `electron-detector-main.ts`)에도 지금 dev harness에만 있는 3D yaw 보정 로직을 포팅할지 결정.
-- 캘리브레이션마다 MAD가 들쭉날쭉하게 잡히는 문제의 근본 원인(세션 간 재현성)을 더 파보기.
 
 ### 팀원별 소감
 
