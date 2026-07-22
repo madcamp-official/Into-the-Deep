@@ -34,6 +34,18 @@ const { autoUpdater } = require("electron-updater");
 const REPO_OWNER = "madcamp-official";
 const REPO_NAME = "Into-the-Deep";
 
+// app.getVersion() is documented to fall back to Electron's own runtime
+// version (e.g. "43.1.1", matching package.json's devDependencies.electron)
+// when it can't resolve the app's own package.json as cleanly — reading
+// this repo's package.json directly instead is unambiguous in both dev and
+// packaged builds. APP_VERSION_RAW (no "v") feeds isNewerVersion's plain
+// dotted-integer comparison below; APP_VERSION (with "v") is what's shown
+// in the UI, matching the "v0.1.8"-style tag electron-builder's GitHub
+// publish step already uses for releases — directly comparable against
+// what's actually on the GitHub Releases page.
+const APP_VERSION_RAW = require("../package.json").version;
+const APP_VERSION = `v${APP_VERSION_RAW}`;
+
 const devServerUrl = app.isPackaged ? null : getDevServerUrlFromArgs();
 
 // Packaged installer/taskbar/dock icon comes from build/icon.png via
@@ -109,11 +121,18 @@ function createDetectorWindow() {
 
 function createOverlayWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const width = 360;
+  // Sized to roughly 1/6-1/5 of the screen's area — noticeably bigger than
+  // a plain corner toast so the fairy notification reads at a glance, but
+  // still comfortably under 1/4 of the screen. Width's floor (760) is
+  // sized for fairy-widget.css's 560px bubble + sprite + margins side by
+  // side — a bubble much wider than the window just gets clipped at the
+  // window edge, same as any browser viewport, so this must stay >= that
+  // combined width even on a small laptop display.
+  const width = Math.max(760, Math.round(workArea.width / 2.3));
   // Tall enough for the fairy sprite + a bubble with title, a two-line
   // message, and the optional recalibration-prompt action row (note +
   // button) that FORWARD_HEAD/TORSO_TWIST alerts add below the message.
-  const height = 320;
+  const height = Math.max(340, Math.round(workArea.height / 2.5));
 
   overlayWindow = new BrowserWindow({
     x: Math.round(workArea.x + workArea.width - width - 8),
@@ -242,7 +261,7 @@ function setupAutoUpdates() {
   }
 }
 
-// Compares app.getVersion() (package.json's "version", baked in at build
+// Compares APP_VERSION_RAW (package.json's "version", baked in at build
 // time) against GitHub's latest tagged release and, if there's a newer one,
 // tells the overlay window to show a fairy alert whose bubble opens that
 // release's page on click — see onUpdateAvailable in preload.cjs /
@@ -258,7 +277,7 @@ async function checkForMacUpdateNotice() {
 
   const release = await response.json();
   const latestVersion = String(release.tag_name ?? "").replace(/^v/, "");
-  if (!latestVersion || !isNewerVersion(latestVersion, app.getVersion())) return;
+  if (!latestVersion || !isNewerVersion(latestVersion, APP_VERSION_RAW)) return;
 
   overlayWindow?.webContents.send("update-available", {
     title: "새 버전이 나왔어요",
@@ -281,9 +300,15 @@ function isNewerVersion(candidate, current) {
 
 function createTray() {
   tray = new Tray(createTrayIcon());
-  tray.setToolTip("요정 — 바른 자세 코치");
+  // Showing APP_VERSION in both the tooltip (hover, no click) and as a
+  // disabled menu row (right-click) is the quickest way to confirm whether
+  // an auto-update actually took effect — compare directly against the
+  // latest tag at https://github.com/madcamp-official/Into-the-Deep/releases.
+  tray.setToolTip(`요정 — 바른 자세 코치 (${APP_VERSION})`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: `버전 ${APP_VERSION}`, enabled: false },
+      { type: "separator" },
       { label: "캘리브레이션 시작", click: () => openCalibrationWindow() },
       { type: "separator" },
       { label: "종료", click: () => app.quit() },

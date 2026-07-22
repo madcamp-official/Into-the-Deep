@@ -9,10 +9,16 @@
 // always-on-top transparent BrowserWindow (see note at the bottom).
 
 // The delays/scales below (and the `fairyEnter` animation-duration and
-// keyframes in product-style.css) both assume: a 1100ms entrance, a
-// resting sprite width of 66px as "current size", and a growth curve that
-// starts at a ~3mm-diameter point and passes through ~7mm about 10% of the
-// way into the loop. Keep them in sync if either side changes.
+// keyframes in fairy-widget.css) both assume a 1100ms entrance and a growth
+// curve that starts at a ~3mm-diameter point and passes through ~7mm about
+// 10% of the way into the loop, originally derived against a 66px resting
+// sprite width. fairy-widget.css's sprite/bubble were later sized up twice
+// (66px -> 92px -> 112px) for overall notification visibility, but the
+// loop-de-loop's absolute px path/scale values below were deliberately left
+// as-is each time — the
+// shape still reads as a full loop that stays on-screen next to the larger
+// fairy, just proportionally tighter, and isn't worth re-deriving the mm
+// math over. Keep the two files in sync if either side changes again.
 //
 // scale(t) = s0 + (1 - s0) * t^p, where s0 = 3mm/66px and p is fit so
 // scale(0.10) == 7mm/66px (1mm = 96/25.4 CSS px).

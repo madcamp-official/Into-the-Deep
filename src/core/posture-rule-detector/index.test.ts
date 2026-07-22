@@ -84,6 +84,99 @@ describe("PostureRuleDetector", () => {
     expect(detector.update(createFrame(500, 0.31))).toMatchObject({ state: "BAD", alert: false });
   });
 
+  it("bridges a single ambiguous frame without resetting the dwell timer or dropping the held posture", () => {
+    const profile = createProfile();
+    const rules: PostureRule[] = [
+      {
+        postureType: "FORWARD_HEAD",
+        requiredLandmarks: [],
+        required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head forward",
+      },
+      {
+        postureType: "HEAD_TILT",
+        requiredLandmarks: [],
+        required: [{ feature: "shoulderTilt", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head tilted",
+      },
+    ];
+    const detector = new PostureRuleDetector(
+      profile,
+      createInitialMADProfile({ values: { headXRatio: 0.1, shoulderTilt: 1 } }),
+      { rules, sustainedSeconds: 1.5, noMatchGraceMs: 300 },
+    );
+
+    // Only FORWARD_HEAD matches — a clean, unambiguous held posture.
+    // (headXRatio 0.31, not 0.3: (0.3 - 0.1) / 0.1 lands a hair under 2 in
+    // floating point, same reason the very first test above uses 0.31.)
+    expect(
+      detector.update(createPostureFrame({ timestamp: 0, headXRatio: 0.31, shoulderTilt: 0 })),
+    ).toMatchObject({ state: "BAD", alert: false, postureType: "FORWARD_HEAD" });
+    // shoulderTilt jitters up enough that HEAD_TILT now scores within
+    // AMBIGUITY_RATIO of FORWARD_HEAD's ~1.035 evidenceScore — ambiguous,
+    // but the person hasn't actually moved out of FORWARD_HEAD. Should
+    // bridge via noMatchGraceMs like a real no-match jitter frame, not
+    // reset state.
+    expect(
+      detector.update(createPostureFrame({ timestamp: 100, headXRatio: 0.31, shoulderTilt: 2.04 })),
+    ).toMatchObject({ state: "BAD", alert: false, postureType: "FORWARD_HEAD" });
+    // Back to unambiguous FORWARD_HEAD.
+    expect(
+      detector.update(createPostureFrame({ timestamp: 200, headXRatio: 0.31, shoulderTilt: 0 })),
+    ).toMatchObject({ state: "BAD", alert: false, postureType: "FORWARD_HEAD" });
+    // Dwell survived the ambiguous blip: sustained from t=0, not reset.
+    expect(
+      detector.update(createPostureFrame({ timestamp: 1600, headXRatio: 0.31, shoulderTilt: 0 })),
+    ).toMatchObject({ state: "BAD", alert: true });
+  });
+
+  it("reports UNKNOWN once an ambiguous gap outlasts the grace window, and starts a fresh dwell afterward", () => {
+    const profile = createProfile();
+    const rules: PostureRule[] = [
+      {
+        postureType: "FORWARD_HEAD",
+        requiredLandmarks: [],
+        required: [{ feature: "headXRatio", operator: "GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head forward",
+      },
+      {
+        postureType: "HEAD_TILT",
+        requiredLandmarks: [],
+        required: [{ feature: "shoulderTilt", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" }],
+        supporting: [],
+        reason: "head tilted",
+      },
+    ];
+    const detector = new PostureRuleDetector(
+      profile,
+      createInitialMADProfile({ values: { headXRatio: 0.1, shoulderTilt: 1 } }),
+      { rules, sustainedSeconds: 1.5, noMatchGraceMs: 300 },
+    );
+
+    expect(
+      detector.update(createPostureFrame({ timestamp: 0, headXRatio: 0.31, shoulderTilt: 0 })),
+    ).toMatchObject({ state: "BAD", alert: false, postureType: "FORWARD_HEAD" });
+    expect(
+      detector.update(createPostureFrame({ timestamp: 100, headXRatio: 0.31, shoulderTilt: 2.04 })),
+    ).toMatchObject({ state: "BAD", alert: false });
+    expect(
+      detector.update(createPostureFrame({ timestamp: 200, headXRatio: 0.31, shoulderTilt: 2.04 })),
+    ).toMatchObject({ state: "BAD", alert: false });
+    // Gap has now outlasted noMatchGraceMs (450 - 100 = 350ms): a genuine
+    // ambiguous stretch, not a single-frame blip.
+    expect(
+      detector.update(createPostureFrame({ timestamp: 450, headXRatio: 0.31, shoulderTilt: 2.04 })),
+    ).toMatchObject({ state: "UNKNOWN", alert: false });
+    // Unambiguous FORWARD_HEAD again — a fresh dwell, not a continuation of
+    // the one from t=0.
+    expect(
+      detector.update(createPostureFrame({ timestamp: 500, headXRatio: 0.31, shoulderTilt: 0 })),
+    ).toMatchObject({ state: "BAD", alert: false });
+  });
+
   it("selects the candidate with the stronger normalized evidence", () => {
     const profile = createProfile();
     const rules: PostureRule[] = [
