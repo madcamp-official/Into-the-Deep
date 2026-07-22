@@ -24,6 +24,9 @@ import {
   describePostureLabel,
   describePresenceDetail,
   describePresenceLabel,
+  RECALIBRATION_PROMPT_BUTTON_LABEL,
+  RECALIBRATION_PROMPT_NOTE,
+  shouldPromptRecalibration,
 } from "../ui/posture-copy";
 import type { FrameFeature, MADProfile } from "../../core/types";
 
@@ -35,10 +38,19 @@ import type { FrameFeature, MADProfile } from "../../core/types";
 // reports alerts to the fairy overlay window over IPC instead of touching
 // the page directly.
 
-// How long a posture must stay "alerted" before the fairy interrupts, and
-// how often it's allowed to retrigger — mirrors product-main.ts so the
-// web and Electron builds nag at the same rate.
-const FAIRY_TRIGGER_DELAY_MS = 2500;
+// Bad-posture alerts have no trigger delay of their own here — event.alert
+// already means the V2 detector (PostureRuleDetector / temporal-state-machine,
+// owned by another teammate) judged the posture sustained long enough to
+// count as bad, so the fairy just reflects that verdict as-is instead of
+// re-gating on a second, redundant wait. It then persists (no auto-hide) for
+// as long as the bad posture does (see loop()'s event.alert branch) instead
+// of retriggering on a cooldown. Mirrors product-main.ts so the web and
+// Electron builds behave the same.
+//
+// "No person in frame" / "posture unreadable" alerts are a separate,
+// UI-owned judgment (not something V2 evaluates), so they keep their own
+// trigger delay and retrigger cooldown below.
+const PRESENCE_ALERT_TRIGGER_DELAY_MS = 2500;
 const FAIRY_RETRIGGER_COOLDOWN_MS = 15000;
 
 // requestAnimationFrame is tied to this window's compositor/repaint cycle —
@@ -111,9 +123,11 @@ async function main(): Promise<void> {
   const madUpdater = new V2MadUpdater(madProfile, { centers: stored.userProfile.originalCenters });
 
   let previousFeature: FrameFeature | null = null;
-  let alertSince: number | null = null;
   let fairyShowing = false;
-  let fairyLastShownAt = 0;
+  // Which postureType the currently-persisted bad-posture fairy is showing —
+  // lets the loop refresh the bubble's text if the dominant issue changes
+  // mid-alert without re-sending the alert every single frame.
+  let fairyMessageKey: string | null = null;
   // Where the calibrated user's shoulders were last seen — seeded from the
   // camera profile's calibration median so tracking is correct from the
   // first frame, even if someone else is already in frame when this
@@ -157,7 +171,7 @@ async function main(): Promise<void> {
         const sustainedMs = timestamp - noPersonSince;
         const canRetrigger =
           !noPersonFairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+        if (sustainedMs >= PRESENCE_ALERT_TRIGGER_DELAY_MS && canRetrigger) {
           electronAPI.sendPostureAlert({
             title: describePresenceLabel(presenceState, wasTracking),
             message: describePresenceDetail(presenceState, wasTracking),
@@ -172,7 +186,7 @@ async function main(): Promise<void> {
         const sustainedMs = timestamp - unknownSince;
         const canRetrigger =
           !unknownFairyShowing || timestamp - unknownFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+        if (sustainedMs >= PRESENCE_ALERT_TRIGGER_DELAY_MS && canRetrigger) {
           electronAPI.sendPostureAlert({
             title: describePresenceLabel(presenceState, wasTracking),
             message: describePresenceDetail(presenceState, wasTracking),
@@ -218,23 +232,30 @@ async function main(): Promise<void> {
     detector.setMADProfile(madProfile);
 
     if (event.alert) {
-      if (alertSince === null) alertSince = timestamp;
-      const sustainedMs = timestamp - alertSince;
-      const canRetrigger =
-        !fairyShowing || timestamp - fairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-
-      if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+      // event.alert is already V2's verdict that this posture has been
+      // sustained long enough to count as bad — send it immediately, no
+      // extra wait on top. Persists (no auto-hide) until posture is actually
+      // corrected (the `else` branch below); only re-sends on the initial
+      // trigger or when the dominant issue changes, not every frame.
+      if (!fairyShowing || fairyMessageKey !== event.postureType) {
         const feedback = generateFeedback(event);
         electronAPI.sendPostureAlert({
           title: describePostureLabel(event),
           message: describePostureDetail(event, feedback.message),
+          persist: true,
+          action: shouldPromptRecalibration(event.postureType)
+            ? { note: RECALIBRATION_PROMPT_NOTE, buttonLabel: RECALIBRATION_PROMPT_BUTTON_LABEL }
+            : undefined,
         });
-        fairyLastShownAt = timestamp;
         fairyShowing = true;
+        fairyMessageKey = event.postureType ?? null;
       }
     } else {
+      if (fairyShowing) {
+        electronAPI.sendPostureAlertClear();
+      }
       fairyShowing = false;
-      alertSince = null;
+      fairyMessageKey = null;
     }
 
     setTimeout(loop, LOOP_INTERVAL_MS);

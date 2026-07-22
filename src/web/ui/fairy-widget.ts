@@ -103,6 +103,31 @@ export interface FairyWidgetOptions {
   onHoverChange?: (hovering: boolean) => void;
 }
 
+export interface FairyShowOptions {
+  /** Fires if the bubble itself (not its ✕ button) is clicked — e.g. opening a link. */
+  onClick?: () => void;
+  /**
+   * Keep the fairy up indefinitely instead of auto-hiding after autoHideMs —
+   * for alerts tied to an ongoing state (e.g. bad posture that hasn't been
+   * corrected yet) rather than a one-off notice. The caller is responsible
+   * for calling dismiss() once that state resolves.
+   */
+  persist?: boolean;
+  /**
+   * Extra note + button shown below the main message — for postures that
+   * might actually be the laptop/camera having moved (FORWARD_HEAD,
+   * TORSO_TWIST) rather than the person's posture, prompting them to
+   * recalibrate from the new position. Clicking the button fires onClick
+   * and then dismisses the fairy (the alert no longer applies once
+   * recalibration is under way).
+   */
+  action?: {
+    note: string;
+    buttonLabel: string;
+    onClick: () => void;
+  };
+}
+
 type FairyState = "hidden" | "entering" | "talking" | "exiting";
 
 export class FairyWidget {
@@ -111,10 +136,16 @@ export class FairyWidget {
   private readonly bubble: HTMLDivElement;
   private readonly titleEl: HTMLElement;
   private readonly messageEl: HTMLDivElement;
+  private readonly actionRow: HTMLDivElement;
+  private readonly actionNoteEl: HTMLSpanElement;
+  private readonly actionButton: HTMLButtonElement;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly trailTimers: Array<ReturnType<typeof setTimeout>> = [];
   private readonly autoHideMs: number;
   private state: FairyState = "hidden";
+  private onBubbleClick: (() => void) | null = null;
+  private onActionClick: (() => void) | null = null;
+  private persistCurrent = false;
 
   constructor(container: HTMLElement, options: FairyWidgetOptions = {}) {
     this.container = container;
@@ -134,11 +165,34 @@ export class FairyWidget {
     dismissBtn.className = "fairy-widget__dismiss";
     dismissBtn.textContent = "✕";
     dismissBtn.setAttribute("aria-label", "닫기");
-    dismissBtn.onclick = () => this.dismiss();
+    dismissBtn.onclick = (event) => {
+      // Stop this from also reaching the bubble's own click listener below
+      // (onBubbleClick) — dismissing and triggering the alert's action
+      // aren't the same gesture.
+      event.stopPropagation();
+      this.dismiss();
+    };
 
     this.titleEl = document.createElement("strong");
     this.messageEl = document.createElement("div");
-    this.bubble.append(dismissBtn, this.titleEl, this.messageEl);
+
+    this.actionRow = document.createElement("div");
+    this.actionRow.className = "fairy-widget__action";
+    this.actionNoteEl = document.createElement("span");
+    this.actionButton = document.createElement("button");
+    this.actionButton.className = "fairy-widget__action-btn";
+    this.actionButton.onclick = (event) => {
+      // Stop this from also reaching the bubble's own click listener —
+      // the action button and the bubble's own onClick (if any) are
+      // separate gestures.
+      event.stopPropagation();
+      this.onActionClick?.();
+      this.dismiss();
+    };
+    this.actionRow.append(this.actionNoteEl, this.actionButton);
+
+    this.bubble.append(dismissBtn, this.titleEl, this.messageEl, this.actionRow);
+    this.bubble.addEventListener("click", () => this.onBubbleClick?.());
 
     this.root.append(this.bubble, sprite);
 
@@ -162,10 +216,30 @@ export class FairyWidget {
    * while it's still mid-flight. The fairy and bubble then vanish together
    * after autoHideMs. A call while already talking just refreshes the text
    * and the auto-hide timer, without replaying the entrance.
+   *
+   * `options.onClick`, when given, fires if the bubble itself (not its ✕
+   * button) is clicked — e.g. opening a link. Purely additive: the bubble
+   * stays click-through everywhere else via the Electron overlay's
+   * setIgnoreMouseEvents dance (see onHoverChange above), unaffected by
+   * whether this particular alert has a click action or not.
+   *
+   * `options.persist` skips scheduling the auto-hide timer entirely, so the
+   * fairy stays up until dismiss() is called explicitly — see startTalking().
+   *
+   * `options.action`, when given, adds a note + button below the message
+   * (e.g. prompting recalibration after a likely camera move).
    */
-  show(message: string, title = "요정이 알려줘요"): void {
+  show(message: string, title = "요정이 알려줘요", options: FairyShowOptions = {}): void {
     this.titleEl.textContent = title;
     this.messageEl.textContent = message;
+    this.onBubbleClick = options.onClick ?? null;
+    this.bubble.classList.toggle("fairy-widget__bubble--clickable", Boolean(options.onClick));
+    this.persistCurrent = Boolean(options.persist);
+
+    this.onActionClick = options.action?.onClick ?? null;
+    this.actionNoteEl.textContent = options.action?.note ?? "";
+    this.actionButton.textContent = options.action?.buttonLabel ?? "";
+    this.actionRow.classList.toggle("fairy-widget__action--visible", Boolean(options.action));
 
     if (this.state === "talking") {
       this.startTalking();
@@ -184,8 +258,13 @@ export class FairyWidget {
     this.root.classList.add("visible", "talking");
     this.state = "talking";
 
-    if (this.hideTimer) clearTimeout(this.hideTimer);
-    this.hideTimer = setTimeout(() => this.dismiss(), this.autoHideMs);
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+    if (!this.persistCurrent) {
+      this.hideTimer = setTimeout(() => this.dismiss(), this.autoHideMs);
+    }
   }
 
   /** Fades the fairy and its bubble out together and fully vanishes. */

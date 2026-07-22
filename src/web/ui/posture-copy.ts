@@ -1,4 +1,4 @@
-import type { DetectionEvent } from "../../core/types";
+import type { DetectionEvent, PostureType } from "../../core/types";
 
 // Longer, actionable correction text for the fairy's speech bubble — the
 // status pill only needs the short label (POSTURE_LABELS below), but a
@@ -80,7 +80,12 @@ export function describePresenceDetail(
       ? "카메라 화면 밖으로 나가신 것 같아요. 다시 화면 안으로 들어와 주세요."
       : "카메라에 사람이 보이지 않아요. 화면에 잘 나오는지 확인해주세요.";
   }
-  return "카메라 각도나 조명을 조금 조정해보세요.";
+  // UNKNOWN means assessLandmarkQuality found a person but faceInFrame/
+  // shouldersInFrame/confidence failed — in practice that's almost always
+  // the face or shoulders being clipped by the frame edge or too small/far
+  // to read confidently, not the camera's angle or lighting, so the advice
+  // should point at framing instead.
+  return "얼굴과 어깨가 화면 안에 잘 보이도록 카메라와의 거리나 위치를 조정해주세요.";
 }
 
 // Fired once when tracking recovers after a sustained NO_PERSON/UNKNOWN
@@ -94,3 +99,23 @@ export function describePersonRecoveredLabel(): string {
 export function describePersonRecoveredDetail(): string {
   return "다시 자세를 확인할게요.";
 }
+
+// FORWARD_HEAD (거북목) and TORSO_TWIST specifically can also be a false
+// read caused by the laptop/camera itself having been moved (changes the
+// calibrated camera-relative baseline) rather than an actual posture change
+// — so these two, and only these two, get an extra recalibration prompt
+// under the fairy's alert. Shared here so product-main.ts and
+// electron-detector-main.ts / electron-overlay-main.ts can't drift on which
+// posture types trigger it or what it says.
+const RECALIBRATION_PROMPT_POSTURE_TYPES: ReadonlySet<PostureType> = new Set([
+  "FORWARD_HEAD",
+  "TORSO_TWIST",
+]);
+
+export function shouldPromptRecalibration(postureType: PostureType | undefined): boolean {
+  return postureType !== undefined && RECALIBRATION_PROMPT_POSTURE_TYPES.has(postureType);
+}
+
+export const RECALIBRATION_PROMPT_NOTE =
+  "노트북(카메라)의 위치를 이동하셨다면 재캘리브레이션을 진행해주세요.";
+export const RECALIBRATION_PROMPT_BUTTON_LABEL = "재측정";

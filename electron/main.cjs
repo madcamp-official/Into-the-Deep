@@ -24,9 +24,15 @@
 // auto-opens calibration on first run (no saved profile yet) instead of
 // requiring a trip to the tray menu — the whole point of "installed" is
 // opening the laptop and being immediately ready to calibrate.
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, session } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, session, shell } = require("electron");
 const path = require("node:path");
 const { autoUpdater } = require("electron-updater");
+
+// Same repo package.json's "build.publish" points electron-builder's
+// Windows NSIS updates at — reused below for the macOS update-notice
+// fallback's own GitHub API lookup and openExternal allowlist.
+const REPO_OWNER = "madcamp-official";
+const REPO_NAME = "Into-the-Deep";
 
 const devServerUrl = app.isPackaged ? null : getDevServerUrlFromArgs();
 
@@ -104,7 +110,10 @@ function createDetectorWindow() {
 function createOverlayWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const width = 360;
-  const height = 260;
+  // Tall enough for the fairy sprite + a bubble with title, a two-line
+  // message, and the optional recalibration-prompt action row (note +
+  // button) that FORWARD_HEAD/TORSO_TWIST alerts add below the message.
+  const height = 320;
 
   overlayWindow = new BrowserWindow({
     x: Math.round(workArea.x + workArea.width - width - 8),
@@ -196,24 +205,78 @@ function createTrayIcon() {
 // Packaged only: dev builds have no update feed (no dev-app-update.yml),
 // and checkForUpdates() would just throw.
 //
-// macOS builds are unsigned (no paid Apple Developer certificate in this
-// repo — see the CI workflow's CSC_IDENTITY_AUTO_DISCOVERY note), so
-// Squirrel.Mac's signature check will likely reject these updates even
-// though they're offered. Windows NSIS updates don't have this restriction
-// and are expected to work end-to-end.
+// Windows-only. macOS builds are unsigned (no paid Apple Developer
+// certificate in this repo — see the CI workflow's
+// CSC_IDENTITY_AUTO_DISCOVERY note), and Squirrel.Mac (the macOS half of
+// electron-updater) refuses to install an update onto an unsigned app —
+// that's macOS enforcing it, not something electron-updater config can
+// route around. checkForMacUpdateNotice() below is the fallback for that
+// platform: not a silent install, just a fairy alert linking to the new
+// release so the user knows to go grab it.
 function setupAutoUpdates() {
-  autoUpdater.on("error", (error) => {
-    console.error("auto-update check failed", error);
-  });
-
-  const check = () => {
-    autoUpdater.checkForUpdates().catch((error) => {
+  if (process.platform === "win32") {
+    autoUpdater.on("error", (error) => {
       console.error("auto-update check failed", error);
     });
-  };
 
-  check();
-  setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    const check = () => {
+      autoUpdater.checkForUpdates().catch((error) => {
+        console.error("auto-update check failed", error);
+      });
+    };
+
+    check();
+    setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    const check = () => {
+      checkForMacUpdateNotice().catch((error) => {
+        console.error("mac update check failed", error);
+      });
+    };
+
+    check();
+    setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  }
+}
+
+// Compares app.getVersion() (package.json's "version", baked in at build
+// time) against GitHub's latest tagged release and, if there's a newer one,
+// tells the overlay window to show a fairy alert whose bubble opens that
+// release's page on click — see onUpdateAvailable in preload.cjs /
+// electron-overlay-main.ts. Unauthenticated GitHub API call, well under
+// its rate limit at one check per UPDATE_CHECK_INTERVAL_MS.
+async function checkForMacUpdateNotice() {
+  const response = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`,
+  );
+  if (!response.ok) {
+    throw new Error(`GitHub releases lookup failed: ${response.status}`);
+  }
+
+  const release = await response.json();
+  const latestVersion = String(release.tag_name ?? "").replace(/^v/, "");
+  if (!latestVersion || !isNewerVersion(latestVersion, app.getVersion())) return;
+
+  overlayWindow?.webContents.send("update-available", {
+    title: "새 버전이 나왔어요",
+    message: `PostureFairy ${latestVersion}가 나왔어요. 눌러서 다운로드 페이지를 열어보세요.`,
+    url: release.html_url,
+  });
+}
+
+// Plain dotted-integer comparison (1.2.10 > 1.2.9) — good enough for this
+// repo's version scheme; no pre-release/build-metadata suffixes to parse.
+function isNewerVersion(candidate, current) {
+  const a = candidate.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const b = current.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
 }
 
 function createTray() {
@@ -256,15 +319,37 @@ ipcMain.on("posture-alert", (_event, payload) => {
   overlayWindow?.webContents.send("posture-alert", payload);
 });
 
+ipcMain.on("posture-alert-clear", () => {
+  overlayWindow?.webContents.send("posture-alert-clear");
+});
+
 ipcMain.on("set-ignore-mouse-events", (event, ignore) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win?.setIgnoreMouseEvents(ignore, { forward: true });
+});
+
+// Sent when the overlay's "새 버전이 나왔어요" bubble (macOS update notice) is
+// clicked. Allowlisted to this repo's own GitHub pages rather than trusting
+// an arbitrary renderer-supplied URL — in practice this only ever round-trips
+// the html_url checkForMacUpdateNotice() itself fetched from GitHub's API,
+// but the renderer is untrusted by contextIsolation's threat model regardless.
+ipcMain.on("open-external", (_event, url) => {
+  if (typeof url === "string" && url.startsWith(`https://github.com/${REPO_OWNER}/${REPO_NAME}/`)) {
+    shell.openExternal(url);
+  }
 });
 
 // First run (or profile cleared): jump straight to calibration instead of
 // making the user find the tray icon — "바로 진행" is the point of having
 // this launch automatically at login.
 ipcMain.on("no-profile", () => {
+  openCalibrationWindow();
+});
+
+// Fairy's "재측정" action button (FORWARD_HEAD/TORSO_TWIST alerts — the user
+// may have moved the laptop/camera itself rather than actually slouched) —
+// same window-opening path as the tray's "캘리브레이션 시작".
+ipcMain.on("request-recalibration", () => {
   openCalibrationWindow();
 });
 

@@ -126,6 +126,10 @@
   transform: none;
   pointer-events: auto;
 }
+.fairy-widget__bubble--clickable {
+  cursor: pointer;
+}
+
 .fairy-widget__bubble strong {
   display: block;
   color: var(--accent);
@@ -133,6 +137,40 @@
   font-weight: 700;
   margin-bottom: 5px;
   letter-spacing: 0.01em;
+}
+
+/* Extra "recalibrate?" note + button below the main message — hidden
+   unless FairyWidget.show() is given an `action` (see fairy-widget.ts). */
+.fairy-widget__action {
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+.fairy-widget__action--visible {
+  display: flex;
+}
+.fairy-widget__action span {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.fairy-widget__action-btn {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .fairy-widget__sprite {
