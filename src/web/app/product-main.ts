@@ -46,14 +46,17 @@ import type {
 const CALIBRATION_DURATION_MS = 5000;
 const MIN_CALIBRATION_FRAMES = 10;
 
-// How long a posture must stay "alerted" before the fairy interrupts —
-// avoids nagging on a single bad frame or a brief stretch/reach. The alert
-// itself then persists (no auto-hide) for as long as the bad posture does —
-// see loop()'s event.alert branch — instead of retriggering on a cooldown.
-const POSTURE_ALERT_TRIGGER_DELAY_MS = 5000;
-// Separate, shorter trigger delay for "no person in frame" / "posture
-// unreadable" alerts — those don't persist-until-fixed the way bad-posture
-// alerts do, so staying quick to (re)fire still matters for them.
+// Bad-posture alerts have no trigger delay of their own here — event.alert
+// already means the V2 detector (PostureRuleDetector / temporal-state-machine,
+// owned by another teammate) judged the posture sustained long enough to
+// count as bad, so the fairy just reflects that verdict as-is instead of
+// re-gating on a second, redundant wait. It then persists (no auto-hide) for
+// as long as the bad posture does — see loop()'s event.alert branch — instead
+// of retriggering on a cooldown.
+//
+// "No person in frame" / "posture unreadable" alerts are a separate,
+// UI-owned judgment (not something V2 evaluates), so they keep their own
+// trigger delay — quick to (re)fire since they don't persist-until-fixed.
 const PRESENCE_ALERT_TRIGGER_DELAY_MS = 2500;
 // Don't re-show the presence fairy more often than this even if the person
 // stays out of frame / unreadable the whole time.
@@ -290,7 +293,6 @@ async function main() {
 
   // ---- main detection loop state --------------------------------------
   let previousFeature: FrameFeature | null = null;
-  let alertSince: number | null = null;
   let fairyShowing = false;
   // Which postureType the currently-persisted bad-posture fairy is showing —
   // lets the loop refresh the bubble's text if the dominant issue changes
@@ -450,22 +452,17 @@ async function main() {
     const feedback = generateFeedback(event);
 
     if (event.alert) {
-      if (alertSince === null) alertSince = timestamp;
-      const sustainedMs = timestamp - alertSince;
       const label = SHOW_SPECIFIC_POSTURE_LABEL
         ? describePostureLabel(event)
         : "자세를 바로잡아주세요";
       setStatus("bad", label, feedback.message);
 
-      // Persists until posture is actually corrected (the `else` branch
-      // below) instead of auto-hiding after a few seconds — a nag that
-      // vanishes on its own timer while the problem is still there defeats
-      // the point. Only re-calls show() on the initial trigger or when the
-      // dominant issue changes, not every frame.
-      if (
-        sustainedMs >= POSTURE_ALERT_TRIGGER_DELAY_MS &&
-        (!fairyShowing || fairyMessageKey !== event.postureType)
-      ) {
+      // event.alert is already V2's verdict that this posture has been
+      // sustained long enough to count as bad — show it immediately, no
+      // extra wait on top. Persists (no auto-hide) until posture is actually
+      // corrected (the `else` branch below); only re-calls show() on the
+      // initial trigger or when the dominant issue changes, not every frame.
+      if (!fairyShowing || fairyMessageKey !== event.postureType) {
         fairy.show(describePostureDetail(event, feedback.message), label, { persist: true });
         fairyShowing = true;
         fairyMessageKey = event.postureType ?? null;
@@ -477,7 +474,6 @@ async function main() {
         fairyMessageKey = null;
         sessionAudio.notifyReturnToNormal();
       }
-      alertSince = null;
       setStatus("good", "정상 자세예요", "");
     }
 

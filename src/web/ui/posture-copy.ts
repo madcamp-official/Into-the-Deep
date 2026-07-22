@@ -80,7 +80,12 @@ export function describePresenceDetail(
       ? "카메라 화면 밖으로 나가신 것 같아요. 다시 화면 안으로 들어와 주세요."
       : "카메라에 사람이 보이지 않아요. 화면에 잘 나오는지 확인해주세요.";
   }
-  return "카메라 각도나 조명을 조금 조정해보세요.";
+  // UNKNOWN means assessLandmarkQuality found a person but faceInFrame/
+  // shouldersInFrame/confidence failed — in practice that's almost always
+  // the face or shoulders being clipped by the frame edge or too small/far
+  // to read confidently, not the camera's angle or lighting, so the advice
+  // should point at framing instead.
+  return "얼굴과 어깨가 화면 안에 잘 보이도록 카메라와의 거리나 위치를 조정해주세요.";
 }
 
 // Fired once when tracking recovers after a sustained NO_PERSON/UNKNOWN

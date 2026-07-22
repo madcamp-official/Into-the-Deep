@@ -35,14 +35,18 @@ import type { FrameFeature, MADProfile } from "../../core/types";
 // reports alerts to the fairy overlay window over IPC instead of touching
 // the page directly.
 
-// How long a posture must stay "alerted" before the fairy interrupts — the
-// alert then persists (no auto-hide) for as long as the bad posture does
-// (see loop()'s event.alert branch) instead of retriggering on a cooldown.
-// Mirrors product-main.ts so the web and Electron builds nag at the same rate.
-const POSTURE_ALERT_TRIGGER_DELAY_MS = 5000;
-// Separate, shorter trigger delay for "no person in frame" / "posture
-// unreadable" alerts, which don't persist-until-fixed — how often those are
-// allowed to retrigger is governed by FAIRY_RETRIGGER_COOLDOWN_MS below.
+// Bad-posture alerts have no trigger delay of their own here — event.alert
+// already means the V2 detector (PostureRuleDetector / temporal-state-machine,
+// owned by another teammate) judged the posture sustained long enough to
+// count as bad, so the fairy just reflects that verdict as-is instead of
+// re-gating on a second, redundant wait. It then persists (no auto-hide) for
+// as long as the bad posture does (see loop()'s event.alert branch) instead
+// of retriggering on a cooldown. Mirrors product-main.ts so the web and
+// Electron builds behave the same.
+//
+// "No person in frame" / "posture unreadable" alerts are a separate,
+// UI-owned judgment (not something V2 evaluates), so they keep their own
+// trigger delay and retrigger cooldown below.
 const PRESENCE_ALERT_TRIGGER_DELAY_MS = 2500;
 const FAIRY_RETRIGGER_COOLDOWN_MS = 15000;
 
@@ -116,7 +120,6 @@ async function main(): Promise<void> {
   const madUpdater = new V2MadUpdater(madProfile);
 
   let previousFeature: FrameFeature | null = null;
-  let alertSince: number | null = null;
   let fairyShowing = false;
   // Which postureType the currently-persisted bad-posture fairy is showing —
   // lets the loop refresh the bubble's text if the dominant issue changes
@@ -226,17 +229,12 @@ async function main(): Promise<void> {
     detector.setMADProfile(madProfile);
 
     if (event.alert) {
-      if (alertSince === null) alertSince = timestamp;
-      const sustainedMs = timestamp - alertSince;
-
-      // Persists until posture is actually corrected (the `else` branch
-      // below) instead of auto-hiding after a few seconds. Only re-sends on
-      // the initial trigger or when the dominant issue changes, not every
-      // frame.
-      if (
-        sustainedMs >= POSTURE_ALERT_TRIGGER_DELAY_MS &&
-        (!fairyShowing || fairyMessageKey !== event.postureType)
-      ) {
+      // event.alert is already V2's verdict that this posture has been
+      // sustained long enough to count as bad — send it immediately, no
+      // extra wait on top. Persists (no auto-hide) until posture is actually
+      // corrected (the `else` branch below); only re-sends on the initial
+      // trigger or when the dominant issue changes, not every frame.
+      if (!fairyShowing || fairyMessageKey !== event.postureType) {
         const feedback = generateFeedback(event);
         electronAPI.sendPostureAlert({
           title: describePostureLabel(event),
@@ -252,7 +250,6 @@ async function main(): Promise<void> {
       }
       fairyShowing = false;
       fairyMessageKey = null;
-      alertSince = null;
     }
 
     setTimeout(loop, LOOP_INTERVAL_MS);
