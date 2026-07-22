@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
   let madProfile: MADProfile = stored.madProfile ?? createInitialMADProfile({ now: Date.now() });
   const detector = new PostureRuleDetector(stored.userProfile, madProfile);
-  const madUpdater = new V2MadUpdater(madProfile);
+  const madUpdater = new V2MadUpdater(madProfile, { centers: stored.userProfile.originalCenters });
 
   let previousFeature: FrameFeature | null = null;
   let alertSince: number | null = null;

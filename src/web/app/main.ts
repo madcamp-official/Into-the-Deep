@@ -56,10 +56,15 @@ import { assessCameraTransform, CameraAssessmentTracker } from "../../core/camer
 import {
   getNextDevelopmentStep,
   CAMERA_DEVELOPMENT_SESSION,
+  MAD_COMPARISON_SESSION,
   STANDARD_DEVELOPMENT_SESSION,
   type DevelopmentSessionStep,
 } from "../../evaluation/development-session";
 import type { SessionType } from "../../evaluation/recorder";
+import {
+  analyzeMADComparisonSession,
+  formatMADComparisonReport,
+} from "../../evaluation/mad-comparison";
 import { loadProfiles, saveProfiles } from "../indexeddb-storage";
 import { describeMovementContext } from "../background-motion-tracker";
 import { BackgroundFeatureTracker, type BackgroundReference } from "../background-feature-tracker";
@@ -100,6 +105,10 @@ const AUTOMATED_SESSION_COUNTDOWN_SECONDS = 3;
 const CAMERA_BOUNDARY_SETTLE_MS = 2000;
 const CAMERA_BOUNDARY_PRECISION = 0.015;
 const CAMERA_BOUNDARY_MAX_ATTEMPTS = 8;
+// Temporarily disable camera environment detection/correction while the
+// posture flow uses recalibration guidance based on posture alerts. Keeping a
+// single switch makes the camera pipeline easy to restore later.
+const CAMERA_ENVIRONMENT_PIPELINE_ENABLED = false;
 
 interface CameraBoundaryScenario {
   label: ScenarioLabel["label"];
@@ -178,6 +187,9 @@ async function main() {
   automatedSessionButton.textContent = "자동 Development Session";
   automatedSessionButton.disabled = true;
   automatedSessionButton.textContent = "Development_Posture_Session";
+  const madComparisonSessionButton = document.createElement("button");
+  madComparisonSessionButton.textContent = "V0·V2 MAD 비교 세션";
+  madComparisonSessionButton.disabled = true;
   const cameraSessionButton = document.createElement("button");
   cameraSessionButton.textContent = "Development_Camera_Session";
   cameraSessionButton.disabled = true;
@@ -256,6 +268,7 @@ async function main() {
     recordButton,
     captureButton,
     automatedSessionButton,
+    madComparisonSessionButton,
     cameraSessionButton,
     cameraBoundarySessionButton,
     downloadButton,
@@ -348,6 +361,8 @@ async function main() {
   let latestEvent: DetectionEvent | null = null;
   let latestV2Event: DetectionEvent | null = null;
   let captureCount = 0;
+  let scenarioEndNoticeUntil = 0;
+  let scenarioEndNoticeText = "";
 
   const recorder = new SessionRecorder();
   const scenarioLabeler = new ScenarioLabeler();
@@ -485,9 +500,10 @@ async function main() {
     v2PostureDetector = new PostureRuleDetector(profile, madProfile, {
       motionEnergyGate: V2_MOTION_ENERGY_GATE,
     });
-    v2MadUpdater = new V2MadUpdater(madProfile);
+    v2MadUpdater = new V2MadUpdater(madProfile, { centers: nextProfile.originalCenters });
     recordButton.disabled = false;
     automatedSessionButton.disabled = false;
+    madComparisonSessionButton.disabled = false;
     cameraSessionButton.disabled = false;
     cameraBoundarySessionButton.disabled = false;
   }
@@ -555,6 +571,8 @@ async function main() {
 
   automatedSessionButton.onclick = () =>
     toggleAutomatedSession("POSTURE", STANDARD_DEVELOPMENT_SESSION, automatedSessionButton);
+  madComparisonSessionButton.onclick = () =>
+    toggleAutomatedSession("MAD_COMPARISON", MAD_COMPARISON_SESSION, madComparisonSessionButton);
   cameraSessionButton.onclick = () =>
     toggleAutomatedSession("CAMERA", CAMERA_DEVELOPMENT_SESSION, cameraSessionButton);
   cameraBoundarySessionButton.onclick = startCameraBoundarySession;
@@ -566,7 +584,7 @@ async function main() {
     // cannot pause posture judgment after the user returns to that view.
     backgroundFeatureTracker.reset();
     cameraAssessmentTracker.reset();
-    if (cameraVerificationMode && backgroundReference) {
+    if (CAMERA_ENVIRONMENT_PIPELINE_ENABLED && cameraVerificationMode && backgroundReference) {
       startBaselineVerification(performance.now(), "STARTUP");
     } else if (!cameraVerificationMode) {
       baselineVerificationUntil = 0;
@@ -604,7 +622,15 @@ async function main() {
       stepIndex: -1,
       steps,
     };
-    button.textContent = `${sessionType === "POSTURE" ? "Development_Posture_Session" : "Development_Camera_Session"} (running)`;
+    button.textContent = `${sessionType === "POSTURE"
+      ? "Development_Posture_Session"
+      : sessionType === "MAD_COMPARISON"
+        ? "V0·V2 MAD 비교 세션"
+        : "Development_Camera_Session"} (진행 중)`;
+    if (sessionType === "MAD_COMPARISON") {
+      sessionInstruction.textContent =
+        "V0와 V2를 같은 프레임으로 비교합니다. 안내에 따라 각 자세를 천천히 취하고 유지해주세요.";
+    }
     setManualControlsDisabled(true);
   }
 
@@ -624,6 +650,7 @@ async function main() {
     automatedSessionButton.textContent = "자동 세션 중지";
     downloadButton.disabled = true;
     automatedSessionButton.textContent = "Development_Posture_Session";
+    madComparisonSessionButton.textContent = "V0·V2 MAD 비교 세션";
     cameraSessionButton.textContent = "Development_Camera_Session";
     cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션";
     scenarioStartedButton.disabled = false;
@@ -643,6 +670,7 @@ async function main() {
     automatedSessionButton.textContent = "자동 Development Session";
     lastSessionLog = toJSONL(entries);
     automatedSessionButton.textContent = "Development_Posture_Session";
+    madComparisonSessionButton.textContent = "V0·V2 MAD 비교 세션";
     cameraSessionButton.textContent = "Development_Camera_Session";
     cameraBoundarySessionButton.textContent = "카메라 경계 탐색 세션";
     if (wasAutomated && currentSessionType === "POSTURE") {
@@ -656,6 +684,11 @@ async function main() {
         `development analysis: ${analysis.normalFrameCount} normal frames, ` +
         `${Object.keys(analysis.initialMAD).length} MAD features, ` +
         `rule threshold candidates: ${thresholdPreview}`;
+    }
+    if (wasAutomated && currentSessionType === "MAD_COMPARISON") {
+      const report = analyzeMADComparisonSession(entries);
+      console.info("MAD comparison session analysis", report);
+      developmentAnalysisSummary = formatMADComparisonReport(report);
     }
     downloadButton.disabled = entries.length === 0;
     scenarioStartedButton.disabled = true;
@@ -717,6 +750,8 @@ async function main() {
     if (isDriftScenario(completedScenario) || completedScenario === "TRANSIENT_ACTION") {
       sessionAudio.notifyReturnToNormal();
     }
+    scenarioEndNoticeText = `${postureScenarioNameKorean(completedScenario)} 시나리오가 끝났습니다. 정상 자세로 돌아와 주세요.`;
+    scenarioEndNoticeUntil = timestamp + 1500;
   }
 
   function startCameraBoundarySession(): void {
@@ -909,6 +944,7 @@ async function main() {
     driftOnsetButton.disabled = true;
     scenarioEndedButton.disabled = disabled || !recorder.isRecording();
     automatedSessionButton.disabled = disabled || !profile;
+    madComparisonSessionButton.disabled = disabled || !profile;
     cameraSessionButton.disabled = disabled || !profile;
     cameraBoundarySessionButton.disabled = disabled || !profile;
   }
@@ -940,6 +976,11 @@ async function main() {
 
   function updateSessionInstruction(timestamp: number): void {
     if (!automatedSession) return;
+
+    if (timestamp < scenarioEndNoticeUntil) {
+      sessionInstruction.textContent = scenarioEndNoticeText;
+      return;
+    }
 
     if (timestamp < automatedSession.startedAt) {
       sessionInstruction.textContent =
@@ -1082,7 +1123,8 @@ async function main() {
     drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
 
-    const cameraTrackingEnabled = cameraVerificationMode || currentSessionType !== "POSTURE";
+    const cameraTrackingEnabled = CAMERA_ENVIRONMENT_PIPELINE_ENABLED &&
+      (cameraVerificationMode || currentSessionType !== "POSTURE");
     const cameraTransform = cameraTrackingEnabled
       ? backgroundFeatureTracker.update(video, timestamp)
       : null;
@@ -1157,6 +1199,7 @@ async function main() {
     // UNKNOWN and RECALIBRATION_REQUIRED must not feed distorted landmarks
     // into posture rules; the banners below pause those judgments instead.
     const correctionTransform =
+      CAMERA_ENVIRONMENT_PIPELINE_ENABLED &&
       !calibrationFrames &&
       cameraAssessment.state === "ADJUSTED" &&
       cameraAssessment.qualityStatus === "OK"
@@ -1218,7 +1261,7 @@ async function main() {
     if (postureDetector) {
       event = postureDetector.update(feature, quality);
       v2Event = v2PostureDetector?.update(feature, quality) ?? null;
-      if (currentSessionType === "POSTURE") {
+      if (currentSessionType === "POSTURE" || currentSessionType === "MAD_COMPARISON") {
         madProfile = v2MadUpdater.update(feature, {
           landmarkQuality: quality,
           matchedPosture: v2Event?.postureType,
@@ -1226,6 +1269,13 @@ async function main() {
       }
       v2PostureDetector?.setMADProfile(madProfile);
       if (recorder.isRecording()) {
+        const comparison = currentSessionType === "MAD_COMPARISON" && event && v2Event
+          ? {
+            v0PostureEvent: event,
+            v2PostureEvent: v2Event,
+            madUpdateCount: madProfile.updateCount,
+          }
+          : null;
         recorder.record(
           feature,
           scenarioLabeler.getCurrentLabel(),
@@ -1233,16 +1283,19 @@ async function main() {
           cameraAssessment.transform ?? cameraTransform,
           cameraAssessment,
           event,
+          comparison,
         );
       }
     }
-    processCameraBoundarySession(
-      timestamp,
-      currentMotionPhase,
-      cameraAssessment,
-      verificationActive,
-      event,
-    );
+    if (CAMERA_ENVIRONMENT_PIPELINE_ENABLED) {
+      processCameraBoundarySession(
+        timestamp,
+        currentMotionPhase,
+        cameraAssessment,
+        verificationActive,
+        event,
+      );
+    }
     latestEvent = event;
     latestV2Event = v2Event;
     const cameraStateKind = cameraAssessment.state === "RECALIBRATION_REQUIRED"
@@ -1803,6 +1856,25 @@ function scenarioName(label: ScenarioLabel["label"]): string {
     SIDE_SHIFT: "좌우로 이동하는",
     HEAD_TURN: "고개를 돌리는",
     CLOSE_TO_CAMERA: "카메라에 가까이 가는",
+  };
+  return names[label] ?? label;
+}
+
+function postureScenarioNameKorean(label: ScenarioLabel["label"]): string {
+  const names: Partial<Record<ScenarioLabel["label"], string>> = {
+    FORWARD_HEAD: "거북목",
+    HEAD_DOWN: "고개 숙이기",
+    FORWARD_LEAN: "상체 앞으로 숙이기",
+    BACKWARD_LEAN: "상체 뒤로 기대기",
+    HEAD_TILT: "고개 갸우뚱하기",
+    CHIN_REST: "턱 괴기",
+    HEAD_BACK: "고개 뒤로 젖히기",
+    SHOULDER_ASYMMETRY: "어깨 비대칭",
+    TORSO_TWIST: "상체 비틀기",
+    ARMREST_LEAN: "팔걸이에 기대기",
+    HEAD_TURN: "고개 돌리기",
+    TRANSIENT_ACTION: "자연 행동",
+    NORMAL_WORK: "정상 작업",
   };
   return names[label] ?? label;
 }

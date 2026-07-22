@@ -101,6 +101,13 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 273, action: "SESSION_ENDED" },
 ];
 
+// Uses every posture scenario that currently has an active alert rule. HEAD_TURN
+// is intentionally excluded because its alert is suppressed during normal use;
+// it should not affect the V0/V2 alert comparison.
+export const MAD_COMPARISON_SESSION = STANDARD_DEVELOPMENT_SESSION.filter(
+  (step) => step.label !== "HEAD_TURN",
+);
+
 export function getNextDevelopmentStep(
   steps: readonly DevelopmentSessionStep[],
   currentIndex: number,
