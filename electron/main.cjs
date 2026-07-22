@@ -316,6 +316,10 @@ ipcMain.on("posture-alert", (_event, payload) => {
   overlayWindow?.webContents.send("posture-alert", payload);
 });
 
+ipcMain.on("posture-alert-clear", () => {
+  overlayWindow?.webContents.send("posture-alert-clear");
+});
+
 ipcMain.on("set-ignore-mouse-events", (event, ignore) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win?.setIgnoreMouseEvents(ignore, { forward: true });

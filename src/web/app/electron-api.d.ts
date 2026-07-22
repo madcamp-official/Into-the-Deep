@@ -6,6 +6,10 @@
 export interface PostureAlertPayload {
   title: string;
   message: string;
+  // True for bad-posture alerts: keeps the fairy up until posture-alert-clear
+  // is sent instead of auto-hiding after a few seconds — see FairyWidget's
+  // `persist` show() option and electron-detector-main.ts's loop().
+  persist?: boolean;
 }
 
 // Sent by main.cjs on macOS only, where electron-updater's silent
@@ -22,6 +26,10 @@ export interface UpdateAvailablePayload {
 export interface ElectronAPI {
   sendPostureAlert(payload: PostureAlertPayload): void;
   onPostureAlert(callback: (payload: PostureAlertPayload) => void): void;
+  // Explicitly dismisses a persisted (persist:true) posture alert — sent
+  // once posture is corrected. See PostureAlertPayload.persist.
+  sendPostureAlertClear(): void;
+  onPostureAlertClear(callback: () => void): void;
   onUpdateAvailable(callback: (payload: UpdateAvailablePayload) => void): void;
   openExternal(url: string): void;
   setIgnoreMouseEvents(ignore: boolean): void;

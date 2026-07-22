@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("posture-alert", (_event, payload) => callback(payload));
   },
 
+  // Explicitly dismisses a persist:true posture alert once posture is
+  // corrected — see PostureAlertPayload.persist / FairyWidget's persist option.
+  sendPostureAlertClear: () => ipcRenderer.send("posture-alert-clear"),
+  onPostureAlertClear: (callback) => {
+    ipcRenderer.on("posture-alert-clear", () => callback());
+  },
+
   // macOS-only "new version available" notice (see checkForMacUpdate in
   // main.cjs) — the unsigned-build stand-in for real auto-update.
   onUpdateAvailable: (callback) => {

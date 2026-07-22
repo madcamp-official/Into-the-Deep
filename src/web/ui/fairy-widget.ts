@@ -103,6 +103,18 @@ export interface FairyWidgetOptions {
   onHoverChange?: (hovering: boolean) => void;
 }
 
+export interface FairyShowOptions {
+  /** Fires if the bubble itself (not its ✕ button) is clicked — e.g. opening a link. */
+  onClick?: () => void;
+  /**
+   * Keep the fairy up indefinitely instead of auto-hiding after autoHideMs —
+   * for alerts tied to an ongoing state (e.g. bad posture that hasn't been
+   * corrected yet) rather than a one-off notice. The caller is responsible
+   * for calling dismiss() once that state resolves.
+   */
+  persist?: boolean;
+}
+
 type FairyState = "hidden" | "entering" | "talking" | "exiting";
 
 export class FairyWidget {
@@ -116,6 +128,7 @@ export class FairyWidget {
   private readonly autoHideMs: number;
   private state: FairyState = "hidden";
   private onBubbleClick: (() => void) | null = null;
+  private persistCurrent = false;
 
   constructor(container: HTMLElement, options: FairyWidgetOptions = {}) {
     this.container = container;
@@ -171,17 +184,21 @@ export class FairyWidget {
    * after autoHideMs. A call while already talking just refreshes the text
    * and the auto-hide timer, without replaying the entrance.
    *
-   * `onClick`, when given, fires if the bubble itself (not its ✕ button) is
-   * clicked — e.g. opening a link. Purely additive: the bubble stays
-   * click-through everywhere else via the Electron overlay's
+   * `options.onClick`, when given, fires if the bubble itself (not its ✕
+   * button) is clicked — e.g. opening a link. Purely additive: the bubble
+   * stays click-through everywhere else via the Electron overlay's
    * setIgnoreMouseEvents dance (see onHoverChange above), unaffected by
    * whether this particular alert has a click action or not.
+   *
+   * `options.persist` skips scheduling the auto-hide timer entirely, so the
+   * fairy stays up until dismiss() is called explicitly — see startTalking().
    */
-  show(message: string, title = "요정이 알려줘요", onClick?: () => void): void {
+  show(message: string, title = "요정이 알려줘요", options: FairyShowOptions = {}): void {
     this.titleEl.textContent = title;
     this.messageEl.textContent = message;
-    this.onBubbleClick = onClick ?? null;
-    this.bubble.classList.toggle("fairy-widget__bubble--clickable", Boolean(onClick));
+    this.onBubbleClick = options.onClick ?? null;
+    this.bubble.classList.toggle("fairy-widget__bubble--clickable", Boolean(options.onClick));
+    this.persistCurrent = Boolean(options.persist);
 
     if (this.state === "talking") {
       this.startTalking();
@@ -200,8 +217,13 @@ export class FairyWidget {
     this.root.classList.add("visible", "talking");
     this.state = "talking";
 
-    if (this.hideTimer) clearTimeout(this.hideTimer);
-    this.hideTimer = setTimeout(() => this.dismiss(), this.autoHideMs);
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+    if (!this.persistCurrent) {
+      this.hideTimer = setTimeout(() => this.dismiss(), this.autoHideMs);
+    }
   }
 
   /** Fades the fairy and its bubble out together and fully vanishes. */

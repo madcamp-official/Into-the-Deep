@@ -47,10 +47,16 @@ const CALIBRATION_DURATION_MS = 5000;
 const MIN_CALIBRATION_FRAMES = 10;
 
 // How long a posture must stay "alerted" before the fairy interrupts —
-// avoids nagging on a single bad frame or a brief stretch/reach.
-const FAIRY_TRIGGER_DELAY_MS = 2500;
-// Don't re-show the fairy more often than this even if the person stays
-// slouched the whole time.
+// avoids nagging on a single bad frame or a brief stretch/reach. The alert
+// itself then persists (no auto-hide) for as long as the bad posture does —
+// see loop()'s event.alert branch — instead of retriggering on a cooldown.
+const POSTURE_ALERT_TRIGGER_DELAY_MS = 5000;
+// Separate, shorter trigger delay for "no person in frame" / "posture
+// unreadable" alerts — those don't persist-until-fixed the way bad-posture
+// alerts do, so staying quick to (re)fire still matters for them.
+const PRESENCE_ALERT_TRIGGER_DELAY_MS = 2500;
+// Don't re-show the presence fairy more often than this even if the person
+// stays out of frame / unreadable the whole time.
 const FAIRY_RETRIGGER_COOLDOWN_MS = 15000;
 
 // Flip to true once the team decides the fairy should name the specific
@@ -285,8 +291,11 @@ async function main() {
   // ---- main detection loop state --------------------------------------
   let previousFeature: FrameFeature | null = null;
   let alertSince: number | null = null;
-  let fairyLastShownAt = 0;
   let fairyShowing = false;
+  // Which postureType the currently-persisted bad-posture fairy is showing —
+  // lets the loop refresh the bubble's text if the dominant issue changes
+  // mid-alert without re-calling fairy.show() on every single frame.
+  let fairyMessageKey: string | null = null;
   let loopStarted = false;
   // Separate from the posture-alert cooldown above: fires the fairy for
   // "no person in frame at all" instead of a bad-posture nudge. The two
@@ -369,7 +378,7 @@ async function main() {
         const sustainedMs = timestamp - noPersonSince;
         const canRetrigger =
           !noPersonFairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+        if (sustainedMs >= PRESENCE_ALERT_TRIGGER_DELAY_MS && canRetrigger) {
           fairy.show(
             describePresenceDetail(presenceState, wasTracking),
             describePresenceLabel(presenceState, wasTracking),
@@ -384,7 +393,7 @@ async function main() {
         const sustainedMs = timestamp - unknownSince;
         const canRetrigger =
           !unknownFairyShowing || timestamp - unknownFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+        if (sustainedMs >= PRESENCE_ALERT_TRIGGER_DELAY_MS && canRetrigger) {
           fairy.show(
             describePresenceDetail(presenceState, wasTracking),
             describePresenceLabel(presenceState, wasTracking),
@@ -448,20 +457,24 @@ async function main() {
         : "자세를 바로잡아주세요";
       setStatus("bad", label, feedback.message);
 
-      const canRetrigger =
-        !fairyShowing || timestamp - fairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
-      if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
-        fairy.show(describePostureDetail(event, feedback.message), label);
-        fairyLastShownAt = timestamp;
+      // Persists until posture is actually corrected (the `else` branch
+      // below) instead of auto-hiding after a few seconds — a nag that
+      // vanishes on its own timer while the problem is still there defeats
+      // the point. Only re-calls show() on the initial trigger or when the
+      // dominant issue changes, not every frame.
+      if (
+        sustainedMs >= POSTURE_ALERT_TRIGGER_DELAY_MS &&
+        (!fairyShowing || fairyMessageKey !== event.postureType)
+      ) {
+        fairy.show(describePostureDetail(event, feedback.message), label, { persist: true });
         fairyShowing = true;
+        fairyMessageKey = event.postureType ?? null;
       }
     } else {
       if (fairyShowing) {
-        // Don't force the fairy away here — it's a toast now and vanishes
-        // on its own auto-hide timer regardless of posture. Just stop
-        // tracking it as "showing" so the next alert can retrigger it
-        // immediately instead of waiting out the retrigger cooldown.
+        fairy.dismiss();
         fairyShowing = false;
+        fairyMessageKey = null;
         sessionAudio.notifyReturnToNormal();
       }
       alertSince = null;
