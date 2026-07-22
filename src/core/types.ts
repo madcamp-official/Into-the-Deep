@@ -217,6 +217,8 @@ export interface CameraAssessment {
   motionPhase?: "STABLE" | "MOVING" | "SETTLING";
   episodeFrameCount?: number;
   episodeUnknownFrameCount?: number;
+  qualityStatus?: "OK" | "DEGRADED" | "RECOVERING" | "RECALIBRATION_REQUIRED";
+  qualityRecoveryFrames?: number;
 }
 
 export interface UserProfile {

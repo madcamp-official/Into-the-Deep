@@ -561,6 +561,20 @@ async function main() {
 
   modeButton.onclick = () => {
     cameraVerificationMode = !cameraVerificationMode;
+    // Camera tracking is intentionally opt-in for the normal posture view.
+    // Reset its temporal state when the mode changes so a stale motion episode
+    // cannot pause posture judgment after the user returns to that view.
+    backgroundFeatureTracker.reset();
+    cameraAssessmentTracker.reset();
+    if (cameraVerificationMode && backgroundReference) {
+      startBaselineVerification(performance.now(), "STARTUP");
+    } else if (!cameraVerificationMode) {
+      baselineVerificationUntil = 0;
+      baselineVerificationKind = null;
+      baselineVerificationTransforms = [];
+      baselineAssessment = null;
+      baselineVerificationFinalized = false;
+    }
     sidePanel.classList.toggle("camera-verification-mode", cameraVerificationMode);
     alertBannerRow.hidden = false;
     modeButton.textContent = cameraVerificationMode
@@ -648,6 +662,7 @@ async function main() {
     driftOnsetButton.disabled = true;
     scenarioEndedButton.disabled = true;
     setManualControlsDisabled(false);
+    currentSessionType = "POSTURE";
     sessionInstruction.textContent =
       "세션이 종료되었습니다. 로그를 다운로드해 replay 평가에 사용할 수 있습니다.";
   }
@@ -1067,8 +1082,13 @@ async function main() {
     drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
 
-    const cameraTransform = backgroundFeatureTracker.update(video, timestamp);
-    const liveCameraAssessment = cameraAssessmentTracker.update(cameraTransform, timestamp);
+    const cameraTrackingEnabled = cameraVerificationMode || currentSessionType !== "POSTURE";
+    const cameraTransform = cameraTrackingEnabled
+      ? backgroundFeatureTracker.update(video, timestamp)
+      : null;
+    const liveCameraAssessment = cameraTrackingEnabled
+      ? cameraAssessmentTracker.update(cameraTransform, timestamp)
+      : createPostureModeCameraAssessment(timestamp);
     const currentMotionPhase = liveCameraAssessment.motionPhase ?? "STABLE";
     if (
       previousCameraMotionPhase !== "STABLE" &&
@@ -1081,7 +1101,8 @@ async function main() {
     }
     previousCameraMotionPhase = currentMotionPhase;
 
-    const verificationActive = baselineVerificationUntil > 0 &&
+    const verificationActive = cameraTrackingEnabled &&
+      baselineVerificationUntil > 0 &&
       timestamp <= baselineVerificationUntil;
     const referenceTransform = verificationActive
       ? backgroundFeatureTracker.compareReference(video, timestamp)
@@ -1124,6 +1145,8 @@ async function main() {
       motionPhase: currentMotionPhase,
       episodeFrameCount: liveCameraAssessment.episodeFrameCount,
       episodeUnknownFrameCount: liveCameraAssessment.episodeUnknownFrameCount,
+      qualityStatus: liveCameraAssessment.qualityStatus,
+      qualityRecoveryFrames: liveCameraAssessment.qualityRecoveryFrames,
       // The calibration baseline assessment intentionally has no transform.
       // Keep the current live transform available for the boundary session
       // and status panel while retaining the baseline state judgment.
@@ -1134,7 +1157,9 @@ async function main() {
     // UNKNOWN and RECALIBRATION_REQUIRED must not feed distorted landmarks
     // into posture rules; the banners below pause those judgments instead.
     const correctionTransform =
-      !calibrationFrames && cameraAssessment.state === "ADJUSTED"
+      !calibrationFrames &&
+      cameraAssessment.state === "ADJUSTED" &&
+      cameraAssessment.qualityStatus === "OK"
         ? cameraAssessment.transform
         : undefined;
     const correctedLandmarks = correctionTransform
@@ -1235,7 +1260,8 @@ async function main() {
     } else if (
       verificationActive ||
       currentMotionPhase !== "STABLE" ||
-      cameraAssessment.state === "UNKNOWN"
+      cameraAssessment.state === "UNKNOWN" ||
+      cameraAssessment.qualityStatus !== "OK"
     ) {
       setAlertBanner(v0AlertBanner, "idle", "Camera movement: posture judgment paused");
       setAlertBanner(v2AlertBanner, "idle", "Camera movement: posture judgment paused");
@@ -1297,6 +1323,10 @@ async function main() {
         ? `episode frames: ${cameraAssessment.episodeFrameCount} (unknown ${cameraAssessment.episodeUnknownFrameCount ?? 0})`
         : "",
       `camera reliability: ${cameraAssessment.reliability.toFixed(2)}`,
+      `tracking quality: ${cameraAssessment.qualityStatus ?? "OK"}`,
+      cameraAssessment.qualityRecoveryFrames !== undefined && cameraAssessment.qualityStatus === "RECOVERING"
+        ? `quality recovery: ${cameraAssessment.qualityRecoveryFrames}/5`
+        : "",
       displayedCameraTransform ? `background points: ${displayedCameraTransform.trackedPointCount}` : "background points: waiting",
       displayedCameraTransform ? `inlier ratio: ${displayedCameraTransform.inlierRatio.toFixed(2)}` : "",
       displayedCameraTransform ? `reprojection error: ${displayedCameraTransform.reprojectionError.toFixed(2)}px` : "",
@@ -1413,6 +1443,21 @@ async function main() {
   };
 
   requestAnimationFrame(loop);
+}
+
+function createPostureModeCameraAssessment(timestamp: number): CameraAssessment {
+  return {
+    timestamp,
+    state: "VALID",
+    scaleCorrection: 0,
+    offsetX: 0,
+    offsetY: 0,
+    reliability: 1,
+    reason: ["camera movement detection disabled in posture mode"],
+    motionPhase: "STABLE",
+    qualityStatus: "OK",
+    qualityRecoveryFrames: 0,
+  };
 }
 
 function formatScore(score: number | undefined): string {
