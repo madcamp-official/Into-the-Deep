@@ -521,12 +521,23 @@ async function main() {
     }
 
     captureCount += 1;
-    const yawAngleRad = previousLandmarks ? estimateBodyYawAngle(previousLandmarks) : undefined;
-    const yawAngleDeg = yawAngleRad !== undefined ? (yawAngleRad * 180) / Math.PI : undefined;
+    // Two different angles, not the same thing: `used` is the fixed,
+    // calibration-averaged angle toFrameFeature actually applied this frame
+    // (profile.originalCenters.bodyYawAngle, or undefined pre-calibration);
+    // `liveEstimate` is a fresh per-frame self-estimate purely for
+    // comparison (confirmed noisy on its own — that's why the fixed value
+    // exists), not what's driving correction.
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+    const usedAngleDeg = previousFeature?.bodyYawAngle !== undefined
+      ? toDeg(previousFeature.bodyYawAngle)
+      : undefined;
+    const liveEstimateRad = previousLandmarks ? estimateBodyYawAngle(previousLandmarks) : undefined;
+    const liveEstimateDeg = liveEstimateRad !== undefined ? toDeg(liveEstimateRad) : undefined;
     const header =
       `--- capture #${captureCount} (${new Date().toLocaleTimeString()}) ` +
       `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ` +
-      `bodyYaw=${yawAngleDeg !== undefined ? `${yawAngleDeg.toFixed(1)}°` : "?"} ---`;
+      `bodyYaw(used)=${usedAngleDeg !== undefined ? `${usedAngleDeg.toFixed(1)}°` : "?"} ` +
+      `bodyYaw(live)=${liveEstimateDeg !== undefined ? `${liveEstimateDeg.toFixed(1)}°` : "?"} ---`;
     const body = formatFeatureSnapshot(previousFeature, profile, v0MadProfile, madProfile);
     captureOutput.textContent = [header, body, "", captureOutput.textContent].join("\n");
   };
