@@ -147,17 +147,30 @@ const MIN_SHOULDER_XZ_DISTANCE = 0.02;
  * sign already relies on the same assumption without issue, so it should
  * hold here too — but flagging it since a violation would fail loudly.
  */
+// Exposed separately from correctBodyYaw so callers (e.g. the capture-panel
+// debug display) can show the raw computed angle in degrees — the only way
+// to tell, live, whether this is a stable estimate or just noise from
+// MediaPipe's known-noisier z coordinate.
+export function estimateBodyYawAngle(landmarks: NormalizedLandmark[]): number | undefined {
+  const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
+  const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
+  if (!leftShoulder || !rightShoulder) return undefined;
+
+  const deltaX = leftShoulder.x - rightShoulder.x;
+  const deltaZ = leftShoulder.z - rightShoulder.z;
+  if (Math.hypot(deltaX, deltaZ) < MIN_SHOULDER_XZ_DISTANCE) return undefined;
+
+  const yawAngle = Math.atan2(deltaZ, deltaX);
+  return Number.isFinite(yawAngle) ? yawAngle : undefined;
+}
+
 export function correctBodyYaw(landmarks: NormalizedLandmark[]): NormalizedLandmark[] {
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!leftShoulder || !rightShoulder) return landmarks;
 
-  const deltaX = leftShoulder.x - rightShoulder.x;
-  const deltaZ = leftShoulder.z - rightShoulder.z;
-  if (Math.hypot(deltaX, deltaZ) < MIN_SHOULDER_XZ_DISTANCE) return landmarks;
-
-  const yawAngle = Math.atan2(deltaZ, deltaX);
-  if (!Number.isFinite(yawAngle) || yawAngle === 0) return landmarks;
+  const yawAngle = estimateBodyYawAngle(landmarks);
+  if (yawAngle === undefined || yawAngle === 0) return landmarks;
 
   const pivotX = (leftShoulder.x + rightShoulder.x) / 2;
   const pivotZ = (leftShoulder.z + rightShoulder.z) / 2;

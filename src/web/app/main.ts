@@ -1,3 +1,4 @@
+import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { startWebcam } from "../camera-adapter/webcam";
 import {
   countPersons,
@@ -12,6 +13,7 @@ import { drawSkeleton, drawVideoFrame } from "../canvas-overlay/skeleton-overlay
 import {
   applyCameraCorrectionToHandLandmarks,
   applyCameraCorrectionToLandmarks,
+  estimateBodyYawAngle,
   toFrameFeature,
 } from "../../core/feature-normalizer";
 import {
@@ -308,6 +310,11 @@ async function main() {
   status.textContent = "running";
 
   let previousFeature: FrameFeature | null = null;
+  // Landmarks as fed into toFrameFeature (post camera-transform-correction,
+  // pre body-yaw-correction) — kept only so the capture button can show the
+  // computed body-yaw angle directly, to check live whether it's a stable
+  // estimate or noisy.
+  let previousLandmarks: NormalizedLandmark[] | null = null;
   let profile: UserProfile | null = null;
   let cameraProfile: CameraProfile | null = null;
   let profileCreatedAt: number | null = null;
@@ -514,9 +521,12 @@ async function main() {
     }
 
     captureCount += 1;
+    const yawAngleRad = previousLandmarks ? estimateBodyYawAngle(previousLandmarks) : undefined;
+    const yawAngleDeg = yawAngleRad !== undefined ? (yawAngleRad * 180) / Math.PI : undefined;
     const header =
       `--- capture #${captureCount} (${new Date().toLocaleTimeString()}) ` +
-      `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ---`;
+      `v0=${latestEvent?.postureType ?? "?"} v2=${latestV2Event?.postureType ?? "?"} ` +
+      `bodyYaw=${yawAngleDeg !== undefined ? `${yawAngleDeg.toFixed(1)}°` : "?"} ---`;
     const body = formatFeatureSnapshot(previousFeature, profile, v0MadProfile, madProfile);
     captureOutput.textContent = [header, body, "", captureOutput.textContent].join("\n");
   };
@@ -1150,6 +1160,7 @@ async function main() {
       correctedHands,
     );
     previousFeature = feature;
+    previousLandmarks = correctedLandmarks;
 
     if (!feature) {
       movementClassifier.reset();
