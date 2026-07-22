@@ -30,10 +30,11 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // A single-frame motionEnergy threshold alone can't separate landmark
 // jitter from real motion — live captures showed a static ARMREST_LEAN
 // hold spike to 0.398 while a genuine mouse-reach frame read as low as
-// 0.190 (see posture-rule-detector's motionSustainMs comment). Gate stays
-// moderate; PostureRuleDetector's sustain-duration check is what actually
-// filters out single-frame noise.
-const V2_MOTION_ENERGY_GATE = 0.2;
+// 0.190 (see posture-rule-detector's motionSustainMs comment). Raised
+// 0.2 -> 0.35: user reported motion detection still triggering too easily
+// in everyday use even with the sustain-duration check; moderate bump
+// rather than chasing an exact boundary again.
+const V2_MOTION_ENERGY_GATE = 0.35;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
