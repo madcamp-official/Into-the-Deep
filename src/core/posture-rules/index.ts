@@ -548,7 +548,13 @@ export const SIDE_ANGLE_POSTURE_RULES: readonly PostureRule[] = [
       // captures (leaning toward the camera, camera untouched) scored
       // 1.29-2.00 — consistently positive and modest, since the camera
       // itself doesn't move. 0.5 sits cleanly in the gap between them.
-      { feature: "shoulderCenterY", operator: "GT", threshold: 0.5, reference: "CALIBRATION" },
+      //
+      // Raised 0.5 -> 1.5: session-1784724071719.jsonl replay (side-angle
+      // calibration, 8868 frames) showed NORMAL_WORK's own shoulderCenterY
+      // median (0.52) sat right on top of the old 0.5 threshold — about
+      // half of ordinary NORMAL_WORK frames already cleared it. Genuine
+      // FORWARD_HEAD median is 2.10 (p10 2.05), comfortably above 1.5.
+      { feature: "shoulderCenterY", operator: "GT", threshold: 1.5, reference: "CALIBRATION" },
     ],
     // faceToShoulderRatio moved from required into anyOf, and
     // headShoulderDistanceRatio added alongside it: live testing found a
@@ -577,11 +583,25 @@ export const SIDE_ANGLE_POSTURE_RULES: readonly PostureRule[] = [
       // cleanly separate these cases at any threshold, confirmed by the
       // replay's own sweep). 0.7 splits the difference (replay: NORMAL_WORK
       // 8.5%, genuine recall 53.4%) — still a compromise, not a fix.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
+      //
+      // Raised 0.7 -> 2.0: session-1784724071719.jsonl replay showed
+      // NORMAL_WORK's own faceToShoulderRatio p90 (1.84) already cleared
+      // the old 0.7 threshold by a wide margin — this was the main driver
+      // of a 41% NORMAL_WORK false-positive rate. Genuine FORWARD_HEAD's
+      // p10 is 2.48, so 2.0 sits in the real gap between the two.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 2.0, reference: "CALIBRATION" },
       // -2 sits at roughly half the two live genuine samples' magnitude
       // (-4.08/-3.93), leaving margin against ordinary jitter while still
       // comfortably catching both.
-      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
+      //
+      // Raised -2 -> -3.5: same replay showed this feature doesn't
+      // discriminate NORMAL_WORK from FORWARD_HEAD at all under this
+      // calibration (NORMAL_WORK p10 -3.17 is even more extreme than
+      // FORWARD_HEAD's own p10 -3.15) — it was acting as an open backdoor
+      // around the faceToShoulderRatio fix above. -3.5 sits just past
+      // NORMAL_WORK's own p10, keeping this as a rare-case fallback instead
+      // of a routine alternate path.
+      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -3.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -595,7 +615,24 @@ export const SIDE_ANGLE_POSTURE_RULES: readonly PostureRule[] = [
     // specific (multi-condition) rules and swallowed them all. Lower
     // priority lets a more specific rule win whenever it also matches;
     // this only wins when it's the sole match (a "pure" turtle neck).
-    priority: 0.4,
+    //
+    // Raised 0.4 -> 0.5 -> 1.0: same replay found 258 genuine FORWARD_HEAD
+    // frames landing in UNKNOWN because SHOULDER_ASYMMETRY's evidence score
+    // (1.073, from shoulderTilt alone) sat within 90% of FORWARD_HEAD's own
+    // — genuine FORWARD_HEAD frames also tilt the shoulder line somewhat
+    // under this calibration (median shoulderTilt -2.76, clearing
+    // SHOULDER_ASYMMETRY's own 2.5 bar). 0.5 wasn't enough once the
+    // required conditions above got tightened (shoulderCenterY 0.5->1.5,
+    // faceToShoulderRatio anyOf 0.7->2.0) — tightening a threshold shrinks
+    // that condition's own score too (normalized/threshold), so FORWARD_HEAD's
+    // evidence score dropped enough that 0.5 now made it *lose* to
+    // SHOULDER_ASYMMETRY outright (83% swallow, worse than the original
+    // ambiguity). Swept 0.5 through 2.0 and found a clean jump to 100% at
+    // 1.0 with no regression on SHOULDER_ASYMMETRY/CHIN_REST/FORWARD_LEAN/
+    // NORMAL_WORK false-positive rate — the tightened required conditions
+    // are specific enough now that this rule doesn't need the old discount
+    // at all.
+    priority: 1.0,
   },
   {
     postureType: "HEAD_DOWN",
