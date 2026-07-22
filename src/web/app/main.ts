@@ -37,6 +37,14 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // no longer register as MOVING, in exchange for jitter almost never
 // triggering a hold.
 const V2_MOTION_ENERGY_GATE = 0.7;
+
+// Below this, a calibration's averaged body-yaw angle is treated as
+// "facing forward" and the fixed-angle correction is skipped entirely
+// (see the fixedYawAngle comment in the main loop) — 20 degrees is well
+// above the noise floor a properly-frontal calibration's per-frame
+// self-estimates should average out to, but comfortably below any
+// deliberate side sit tested live (all >=30 degrees).
+const MIN_CORRECTED_YAW_ANGLE = (20 * Math.PI) / 180;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
@@ -1172,7 +1180,24 @@ async function main() {
     // baseline instead of a fresh per-frame estimate (see
     // correctBodyYaw/estimateBodyYawAngle's comments — the per-frame
     // estimate alone was confirmed too noisy).
-    const fixedYawAngle = calibrationFrames ? undefined : profile?.originalCenters.bodyYawAngle;
+    //
+    // Below MIN_CORRECTED_YAW_ANGLE, treat the calibration as "facing
+    // forward" and pass a fixed 0 (no correction at all — the pre-this-
+    // feature behavior) rather than the tiny measured angle. User reported
+    // that applying the correction even for a roughly-frontal calibration
+    // made things noticeably worse than before this feature existed —
+    // only apply it once the averaged angle clears a "this was clearly a
+    // deliberate side sit" bar.
+    let fixedYawAngle: number | undefined;
+    if (calibrationFrames) {
+      fixedYawAngle = undefined; // self-estimate fresh per frame, for buildUserProfile to average
+    } else {
+      const calibratedYawAngle = profile?.originalCenters.bodyYawAngle;
+      fixedYawAngle =
+        calibratedYawAngle !== undefined && Math.abs(calibratedYawAngle) >= MIN_CORRECTED_YAW_ANGLE
+          ? calibratedYawAngle
+          : 0;
+    }
     const feature = toFrameFeature(
       correctedLandmarks,
       timestamp,
