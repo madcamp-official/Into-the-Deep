@@ -41,6 +41,10 @@ const PROFILE_FEATURES = [
   // subject, too noisy to use directly. Median (not circular mean) is fine
   // here since real sitting angles don't wrap around +-180 degrees.
   "bodyYawAngle",
+  // Needed as a calibration baseline for TORSO_TWIST's faceSize ABS_LT
+  // guard (see posture-rules/index.ts) — "face size roughly unchanged from
+  // calibration" needs a CALIBRATION-reference center to compare against.
+  "faceSize",
 ] as const satisfies readonly (keyof FrameFeature)[];
 
 export function buildUserProfile(calibrationFrames: FrameFeature[]): UserProfile {

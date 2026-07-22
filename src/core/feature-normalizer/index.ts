@@ -300,6 +300,14 @@ export function toFrameFeature(
       : undefined;
   const rawFaceToShoulderRatio =
     eyeDistance !== undefined && shoulderWidth > 0 ? eyeDistance / shoulderWidth : undefined;
+  // Raw eye distance, not divided by shoulderWidth like faceToShoulderRatio
+  // above — needed as an independent "did the face itself get bigger/
+  // smaller" signal for TORSO_TWIST: leaning toward/away from the camera
+  // changes shoulder width AND face size together, while twisting the
+  // torso changes only the projected shoulder width (the face doesn't move
+  // closer/farther). faceToShoulderRatio can't tell these apart since
+  // shoulderWidth is baked into it either way.
+  const rawFaceSize = eyeDistance;
   const rawPitchProxy =
     faceCenterY !== undefined && shoulderWidth > 0 ? (nose.y - faceCenterY) / shoulderWidth : undefined;
 
@@ -507,6 +515,8 @@ export function toFrameFeature(
     rawFaceToShoulderRatio !== undefined
       ? smooth(rawFaceToShoulderRatio, previous?.faceToShoulderRatio)
       : undefined;
+  const faceSize =
+    rawFaceSize !== undefined ? smooth(rawFaceSize, previous?.faceSize) : undefined;
   const pitchProxy =
     rawPitchProxy !== undefined ? smooth(rawPitchProxy, previous?.pitchProxy) : undefined;
   const yawProxy = rawYawProxy !== undefined ? smooth(rawYawProxy, previous?.yawProxy) : undefined;
@@ -565,6 +575,7 @@ export function toFrameFeature(
     shoulderCenterY: shoulderCenterYFeature,
     bodyScale,
     ...(faceToShoulderRatio !== undefined ? { faceToShoulderRatio } : {}),
+    ...(faceSize !== undefined ? { faceSize } : {}),
     ...(pitchProxy !== undefined ? { pitchProxy } : {}),
     ...(yawProxy !== undefined ? { yawProxy } : {}),
     motionEnergy,

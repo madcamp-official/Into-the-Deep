@@ -54,6 +54,7 @@ export type PostureFeatureName =
   | "headShoulderDistanceRatio"
   | "faceToShoulderRatio"
   | "faceToShoulderRatioDelta"
+  | "faceSize"
   | "pitchProxy"
   | "yawProxy"
   | "correctedYaw"
@@ -128,6 +129,12 @@ export interface FrameFeature {
   torsoRotationProxy?: number;
   handFaceDistance?: number;
   handShoulderDistance?: number;
+  // Raw eye-to-eye distance, NOT divided by shoulderWidth like
+  // faceToShoulderRatio — an independent "did the face get bigger/smaller"
+  // signal for TORSO_TWIST (see posture-rules/index.ts): leaning toward/
+  // away from the camera changes shoulder width and face size together,
+  // while twisting the torso changes only the projected shoulder width.
+  faceSize?: number;
   // Radians. Self-estimated per frame (see feature-normalizer's
   // estimateBodyYawAngle) during calibration so profile-builder can average
   // it into a single stable baseline; live frames instead reuse that fixed
