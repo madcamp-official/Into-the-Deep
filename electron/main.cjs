@@ -121,14 +121,14 @@ function createDetectorWindow() {
 
 function createOverlayWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  // Sized to roughly 1/6 of the screen's area (width/2.5 x height/2.5) —
-  // noticeably bigger than a plain corner toast so the fairy notification
-  // reads at a glance, but still comfortably under 1/4 of the screen.
-  // Floored so it doesn't shrink back down on a small laptop display below
-  // what fairy-widget.css's sprite/bubble actually need (a bubble much
-  // wider than the window just gets clipped at the window edge, same as
-  // any browser viewport).
-  const width = Math.max(560, Math.round(workArea.width / 2.5));
+  // Sized to roughly 1/6-1/5 of the screen's area — noticeably bigger than
+  // a plain corner toast so the fairy notification reads at a glance, but
+  // still comfortably under 1/4 of the screen. Width's floor (760) is
+  // sized for fairy-widget.css's 560px bubble + sprite + margins side by
+  // side — a bubble much wider than the window just gets clipped at the
+  // window edge, same as any browser viewport, so this must stay >= that
+  // combined width even on a small laptop display.
+  const width = Math.max(760, Math.round(workArea.width / 2.3));
   // Tall enough for the fairy sprite + a bubble with title, a two-line
   // message, and the optional recalibration-prompt action row (note +
   // button) that FORWARD_HEAD/TORSO_TWIST alerts add below the message.

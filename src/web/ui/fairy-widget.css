@@ -105,7 +105,10 @@
 
 .fairy-widget__bubble {
   position: relative;
-  max-width: 350px;
+  /* Wide enough that the longest posture-detail sentences (see
+     posture-copy.ts's POSTURE_DETAILS, ~45-60 Korean characters) wrap to
+     about 2 lines instead of 4-5 cramped ones. */
+  max-width: 560px;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 24px 24px 6px 24px;
