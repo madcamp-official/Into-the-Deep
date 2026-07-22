@@ -126,6 +126,10 @@
   transform: none;
   pointer-events: auto;
 }
+.fairy-widget__bubble--clickable {
+  cursor: pointer;
+}
+
 .fairy-widget__bubble strong {
   display: block;
   color: var(--accent);

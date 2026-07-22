@@ -115,6 +115,7 @@ export class FairyWidget {
   private readonly trailTimers: Array<ReturnType<typeof setTimeout>> = [];
   private readonly autoHideMs: number;
   private state: FairyState = "hidden";
+  private onBubbleClick: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: FairyWidgetOptions = {}) {
     this.container = container;
@@ -134,11 +135,18 @@ export class FairyWidget {
     dismissBtn.className = "fairy-widget__dismiss";
     dismissBtn.textContent = "✕";
     dismissBtn.setAttribute("aria-label", "닫기");
-    dismissBtn.onclick = () => this.dismiss();
+    dismissBtn.onclick = (event) => {
+      // Stop this from also reaching the bubble's own click listener below
+      // (onBubbleClick) — dismissing and triggering the alert's action
+      // aren't the same gesture.
+      event.stopPropagation();
+      this.dismiss();
+    };
 
     this.titleEl = document.createElement("strong");
     this.messageEl = document.createElement("div");
     this.bubble.append(dismissBtn, this.titleEl, this.messageEl);
+    this.bubble.addEventListener("click", () => this.onBubbleClick?.());
 
     this.root.append(this.bubble, sprite);
 
@@ -162,10 +170,18 @@ export class FairyWidget {
    * while it's still mid-flight. The fairy and bubble then vanish together
    * after autoHideMs. A call while already talking just refreshes the text
    * and the auto-hide timer, without replaying the entrance.
+   *
+   * `onClick`, when given, fires if the bubble itself (not its ✕ button) is
+   * clicked — e.g. opening a link. Purely additive: the bubble stays
+   * click-through everywhere else via the Electron overlay's
+   * setIgnoreMouseEvents dance (see onHoverChange above), unaffected by
+   * whether this particular alert has a click action or not.
    */
-  show(message: string, title = "요정이 알려줘요"): void {
+  show(message: string, title = "요정이 알려줘요", onClick?: () => void): void {
     this.titleEl.textContent = title;
     this.messageEl.textContent = message;
+    this.onBubbleClick = onClick ?? null;
+    this.bubble.classList.toggle("fairy-widget__bubble--clickable", Boolean(onClick));
 
     if (this.state === "talking") {
       this.startTalking();

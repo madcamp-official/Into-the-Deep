@@ -8,9 +8,22 @@ export interface PostureAlertPayload {
   message: string;
 }
 
+// Sent by main.cjs on macOS only, where electron-updater's silent
+// Squirrel.Mac auto-update isn't available without a paid Apple code-signing
+// certificate — this is the unsigned-build fallback: a fairy alert whose
+// bubble opens the new release's GitHub page when clicked. Windows instead
+// gets the real thing (autoUpdater in main.cjs) and never sends this.
+export interface UpdateAvailablePayload {
+  title: string;
+  message: string;
+  url: string;
+}
+
 export interface ElectronAPI {
   sendPostureAlert(payload: PostureAlertPayload): void;
   onPostureAlert(callback: (payload: PostureAlertPayload) => void): void;
+  onUpdateAvailable(callback: (payload: UpdateAvailablePayload) => void): void;
+  openExternal(url: string): void;
   setIgnoreMouseEvents(ignore: boolean): void;
   notifyNoProfile(): void;
   // Whether calibration already completed once during this app run — see

@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("posture-alert", (_event, payload) => callback(payload));
   },
 
+  // macOS-only "new version available" notice (see checkForMacUpdate in
+  // main.cjs) — the unsigned-build stand-in for real auto-update.
+  onUpdateAvailable: (callback) => {
+    ipcRenderer.on("update-available", (_event, payload) => callback(payload));
+  },
+  openExternal: (url) => ipcRenderer.send("open-external", url),
+
   // Overlay window is otherwise click-through (transparent + always-on-top
   // + setIgnoreMouseEvents); this lets it re-enable clicks only while the
   // pointer is over the fairy/bubble so it doesn't block whatever app sits
