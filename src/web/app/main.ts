@@ -41,6 +41,13 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // exchange for jitter almost never triggering a hold.
 const V2_MOTION_ENERGY_GATE = 1.0;
 
+// V2's alert banner requires V0 (frozen-MAD, zero-latency) to have matched
+// the *same* posture continuously for this long, instead of relying on V2's
+// own internal dwell timer (which uses V2's continuously-adapting MAD and
+// can flicker in/out of a match as that MAD drifts) — explicit request to
+// gate alerting on V0's more stable judgment.
+const V0_ALERT_SUSTAIN_MS = 5000;
+
 // Below this, a calibration's averaged body-yaw angle is treated as
 // "facing forward" and the fixed-angle correction is skipped entirely
 // (see the fixedYawAngle comment in the main loop) — 20 degrees is well
@@ -94,6 +101,7 @@ import type {
   FrameFeature,
   MADProfile,
   PostureFeatureName,
+  PostureType,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
@@ -381,6 +389,16 @@ async function main() {
   let previousCameraMotionPhase: "STABLE" | "MOVING" | "SETTLING" = "STABLE";
   let latestEvent: DetectionEvent | null = null;
   let latestV2Event: DetectionEvent | null = null;
+  // Tracks how long V0 (frozen-MAD, zero-latency) has continuously matched
+  // the *same* posture, in real wall-clock time — independent of V0's own
+  // sustainedSeconds:0 alert (which fires instantly and stays a pure
+  // zero-latency baseline for the V0/V2 comparison banners above) and of
+  // V2's own internal dwell (which uses V2's continuously-adapting MAD and
+  // can flicker in/out of a match as that MAD drifts). The V2 alert banner
+  // below gates on this streak instead of v2Event.alert, per explicit
+  // request: only alert once V0 has held the same posture for 5+ seconds.
+  let v0AlertStreakPostureType: PostureType | null = null;
+  let v0AlertStreakStartedAt: number | null = null;
   let captureCount = 0;
   let scenarioEndNoticeUntil = 0;
   let scenarioEndNoticeText = "";
@@ -1385,6 +1403,15 @@ async function main() {
     latestEvent = event;
     latestV2Event = v2Event;
 
+    if (event?.postureType && event.postureType === v0AlertStreakPostureType) {
+      // same posture continuing — leave v0AlertStreakStartedAt as-is
+    } else {
+      v0AlertStreakPostureType = event?.postureType ?? null;
+      v0AlertStreakStartedAt = event?.postureType ? timestamp : null;
+    }
+    const v0SustainedFiveSec =
+      v0AlertStreakStartedAt !== null && timestamp - v0AlertStreakStartedAt >= V0_ALERT_SUSTAIN_MS;
+
     // Alert banners always reflect V0/V2 posture judgment directly — no
     // camera-recalibration/camera-movement/verification-mode banner
     // overrides. (cameraAssessment is still computed and fed into the
@@ -1402,15 +1429,16 @@ async function main() {
         setAlertBanner(v0AlertBanner, "good", "V0: 정상 자세입니다");
       }
 
-      if (v2Event?.alert) {
-        setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(v2Event)}`);
-      } else if (v2Event?.state === "MOVING") {
+      if (v2Event?.state === "MOVING") {
         // Motion-energy hold: v2's judgment is deliberately paused while
         // sustained movement is detected (see posture-rule-detector's
         // motionEnergyGate), not a "you're fine" result — showing it as
         // "정상" here would misreport a held-but-unevaluated frame as a
-        // confirmed normal posture.
+        // confirmed normal posture. Takes priority over the V0 streak check
+        // below since a hold means "don't judge yet", not "alert anyway".
         setAlertBanner(v2AlertBanner, "unknown", "V2: 판단 보류 중 (움직임 감지)");
+      } else if (v0SustainedFiveSec && event) {
+        setAlertBanner(v2AlertBanner, "bad", `V2: ${describeMatchedFeatures(event)}`);
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
