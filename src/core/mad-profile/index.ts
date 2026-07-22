@@ -28,6 +28,7 @@ export const MAD_FEATURES: readonly PostureFeatureName[] = [
   "handFaceDistance",
   "handShoulderDistance",
   "motionEnergy",
+  "faceSize",
 ];
 
 // Conservative starting scales. Development-session analysis should replace
@@ -60,6 +61,10 @@ export const DEFAULT_MAD_VALUES: FeatureVector = {
   handFaceDistance: 0.05,
   handShoulderDistance: 0.05,
   motionEnergy: 0.05,
+  // Raw eye-to-eye distance (see feature-normalizer's faceSize) — same
+  // rough scale as faceToShoulderRatio's 0.01 since both derive from
+  // eyeDistance, just not divided by shoulderWidth here.
+  faceSize: 0.01,
 };
 
 export interface MadProfileOptions {
