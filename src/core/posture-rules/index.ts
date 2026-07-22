@@ -53,7 +53,14 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // faceToShoulderRatio scoring 0.87/0.93/1.08 against this calibration
       // — right at the old threshold's edge. 0.9 pushes the two lower ones
       // below 1 while still leaving room for a clearly-held hold.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.9, reference: "CALIBRATION" },
+      //
+      // Raised again 0.9 -> 1.3: a full-session replay (session-
+      // 1784722544259.jsonl, 8636 frames) showed 0.9 was nowhere near
+      // enough — NORMAL_WORK false-positived on FORWARD_HEAD 28-29% of the
+      // time. Distribution: NORMAL_WORK median 0.32 (p90 1.22), genuine
+      // FORWARD_HEAD median 2.15 (p10 1.95) — 1.3 sits just above
+      // NORMAL_WORK's p90 with real margin below FORWARD_HEAD's own p10.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 1.3, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
@@ -63,6 +70,19 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // enough not to repeat the old "blocked genuine detections" failure,
       // tight enough to exclude a real whole-body camera-distance change.
       { feature: "bodyScale", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
+      // headRoll GT added: faceToShoulderRatio/pitchProxy both rise for
+      // HEAD_DOWN almost as much as for genuine FORWARD_HEAD (session-
+      // 1784722544259.jsonl: pitchProxy medians 2.44 vs 2.65, heavily
+      // overlapping), so FORWARD_HEAD kept winning the evidence-score
+      // contest on 97% of real HEAD_DOWN frames — tried rebalancing via
+      // HEAD_DOWN's priority instead (see its own comment) and found no
+      // viable middle ground. headRoll turned out to separate the two
+      // cleanly in the same replay: genuine FORWARD_HEAD scored
+      // consistently positive (p10 1.14, median 1.67, p90 2.19) while
+      // genuine HEAD_DOWN scored negative-to-flat (p10 -1.95, median
+      // -0.52, p90 0.53) — a real gap between HEAD_DOWN's p90 and
+      // FORWARD_HEAD's p10. 0.8 sits in that gap.
+      { feature: "headRoll", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -113,6 +133,15 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // needs), and this rule's single easy condition out-scored their
     // more specific multi-condition rules. Deprioritized so this only
     // wins as the sole match.
+    //
+    // Tried raising this to 0.7 to beat FORWARD_HEAD's evidence score
+    // (session-1784722544259.jsonl replay showed 97% of genuine HEAD_DOWN
+    // matched FORWARD_HEAD instead) — swept 0.4 through 0.7 and found no
+    // middle ground: HEAD_DOWN stayed near 0% until ~0.6, then FORWARD_HEAD
+    // collapsed to 36% just as HEAD_DOWN recovered. Priority can't fix an
+    // evidence-score overlap this deep. Reverted to 0.4; see FORWARD_HEAD's
+    // new headRoll condition above for the actual fix (a required-condition
+    // exclusion instead of an evidence-score arms race).
     priority: 0.4,
   },
   // SIDE_SHIFT intentionally omitted: shoulderXOffset is shoulderCenterX /
@@ -193,7 +222,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // reclining moves the torso's vertical screen position in a way
     // faceToShoulderRatio doesn't reliably track.
     required: [
-      { feature: "shoulderCenterY", operator: "GT", threshold: 1.5, reference: "CALIBRATION" },
+      { feature: "shoulderCenterY", operator: "GT", threshold: 1.3, reference: "CALIBRATION" },
       { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.3, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "headYRatio", "forwardLeanProxy", "faceToShoulderRatio"],
