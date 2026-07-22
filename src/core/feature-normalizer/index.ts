@@ -320,9 +320,9 @@ export function toFrameFeature(
   // Mouth center: closest available proxy to the chin (see LANDMARK_INDEX),
   // used only for handFaceDistance below — the eye/ear-based headCenter
   // above already backs several other, separately-tuned features and
-  // shifting its definition would move all of them at once.
-  const mouthCenterX =
-    mouthReliable && mouthLeft && mouthRight ? (mouthLeft.x + mouthRight.x) / 2 : undefined;
+  // shifting its definition would move all of them at once. Only Y is
+  // needed here (X comes from the uncorrected rawMouthCenterX below, see
+  // the hand-relative features comment).
   const mouthCenterY =
     mouthReliable && mouthLeft && mouthRight ? (mouthLeft.y + mouthRight.y) / 2 : undefined;
 
@@ -370,7 +370,40 @@ export function toFrameFeature(
   // the wrist is well below the actual point of contact for a real chin
   // rest — confirmed live that wrist-based distance couldn't tell a
   // resting hand from one merely held up near the face.
-  const chinReferenceX = mouthCenterX ?? headCenterX;
+  //
+  // X here deliberately comes from landmarksBeforeYawCorrection, not the
+  // corrected mouthCenterX/headCenterX/shoulderCenterX above: hand landmarks
+  // are a separate HandLandmarker pass that never goes through
+  // correctBodyYaw's rotation (see its own doc comment), so mixing a
+  // corrected body-landmark X against an uncorrected hand-landmark X
+  // silently inflates the computed distance under any active yaw
+  // correction — confirmed live, raw handFaceDistance for the same physical
+  // chin-rest hold came out ~3-4x larger under a 33.8-degree-corrected
+  // calibration (0.88-1.06) than under no correction (0.20-0.38), causing
+  // CHIN_REST to miss every time under a side-angle calibration. Y is
+  // unaffected either way (the rotation only touches x/z), so only X needs
+  // an uncorrected counterpart. shoulderWidth (the normalizing denominator)
+  // stays the corrected value — that's a scale, not a coordinate-frame
+  // mismatch, and should stay consistent with every other scale-normalized
+  // feature.
+  const rawNose = landmarksBeforeYawCorrection[LANDMARK_INDEX.nose];
+  const rawLeftEye = landmarksBeforeYawCorrection[LANDMARK_INDEX.leftEye];
+  const rawRightEye = landmarksBeforeYawCorrection[LANDMARK_INDEX.rightEye];
+  const rawLeftEar = landmarksBeforeYawCorrection[LANDMARK_INDEX.leftEar];
+  const rawRightEar = landmarksBeforeYawCorrection[LANDMARK_INDEX.rightEar];
+  const rawMouthLeft = landmarksBeforeYawCorrection[LANDMARK_INDEX.mouthLeft];
+  const rawMouthRight = landmarksBeforeYawCorrection[LANDMARK_INDEX.mouthRight];
+  const rawLeftShoulderForHands = landmarksBeforeYawCorrection[LANDMARK_INDEX.leftShoulder];
+  const rawRightShoulderForHands = landmarksBeforeYawCorrection[LANDMARK_INDEX.rightShoulder];
+  const rawFaceCenterX =
+    eyesReliable && rawLeftEye && rawRightEye ? (rawLeftEye.x + rawRightEye.x) / 2 : undefined;
+  const rawEarCenterX =
+    earsReliable && rawLeftEar && rawRightEar ? (rawLeftEar.x + rawRightEar.x) / 2 : undefined;
+  const rawHeadCenterX = rawFaceCenterX ?? rawEarCenterX ?? rawNose.x;
+  const rawMouthCenterX =
+    mouthReliable && rawMouthLeft && rawMouthRight ? (rawMouthLeft.x + rawMouthRight.x) / 2 : undefined;
+  const rawChinReferenceX = rawMouthCenterX ?? rawHeadCenterX;
+  const rawShoulderCenterX = (rawLeftShoulderForHands.x + rawRightShoulderForHands.x) / 2;
   const chinReferenceY = mouthCenterY ?? headCenterY;
   let rawHandFaceDistance: number | undefined;
   let rawHandShoulderDistance: number | undefined;
@@ -380,15 +413,15 @@ export function toFrameFeature(
       .filter((point): point is NormalizedLandmark => point !== undefined);
     if (candidates.length > 0) {
       const chosenHand = candidates.reduce((closest, candidate) =>
-        Math.hypot(candidate.x - chinReferenceX, candidate.y - chinReferenceY) <
-        Math.hypot(closest.x - chinReferenceX, closest.y - chinReferenceY)
+        Math.hypot(candidate.x - rawChinReferenceX, candidate.y - chinReferenceY) <
+        Math.hypot(closest.x - rawChinReferenceX, closest.y - chinReferenceY)
           ? candidate
           : closest,
       );
       rawHandFaceDistance =
-        Math.hypot(chosenHand.x - chinReferenceX, chosenHand.y - chinReferenceY) / shoulderWidth;
+        Math.hypot(chosenHand.x - rawChinReferenceX, chosenHand.y - chinReferenceY) / shoulderWidth;
       rawHandShoulderDistance =
-        Math.hypot(chosenHand.x - shoulderCenterX, chosenHand.y - shoulderCenterY) /
+        Math.hypot(chosenHand.x - rawShoulderCenterX, chosenHand.y - shoulderCenterY) /
         shoulderWidth;
     }
   }
