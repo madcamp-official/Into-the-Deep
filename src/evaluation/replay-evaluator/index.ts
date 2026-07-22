@@ -47,8 +47,8 @@ export function createV2DetectorFromSession(entries: readonly SessionLogEntry[])
   const metadata = getSessionMetadata(entries);
   if (!metadata) throw new Error("Session metadata is required to replay V2");
   let madProfile = metadata.madProfile ?? createInitialMADProfile();
-  const detector = new PostureRuleDetector(metadata.userProfile, madProfile);
-  const updater = new V2MadUpdater(madProfile);
+  const detector = new PostureRuleDetector(metadata.userProfile, madProfile, { sustainedSeconds: 5 });
+  const updater = new V2MadUpdater(madProfile, { centers: metadata.userProfile.originalCenters });
   return (entry) => {
     const feature = toFrameFeature(entry);
     const event = detector.update(feature);

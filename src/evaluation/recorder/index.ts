@@ -3,13 +3,22 @@ import type {
   CameraAssessment,
   CameraTransform,
   DetectionEvent,
+  FeatureVector,
   FrameFeature,
   MADProfile,
   ScenarioLabel,
   UserProfile,
 } from "../../core/types";
 
-export type SessionType = "POSTURE" | "CAMERA" | "CAMERA_BOUNDARY";
+export type SessionType = "POSTURE" | "CAMERA" | "CAMERA_BOUNDARY" | "MAD_COMPARISON";
+
+export interface MADComparisonFrame {
+  v0PostureEvent: DetectionEvent;
+  v2PostureEvent: DetectionEvent;
+  madUpdateCount: number;
+  /** V2 MAD values at this frame; used to compare initial and final MAD. */
+  madValues?: FeatureVector;
+}
 
 export type SessionMarkerType =
   | "SCENARIO_STARTED"
@@ -42,6 +51,7 @@ export interface SessionLogEntry {
   cameraTransform?: CameraTransform;
   cameraAssessment?: CameraAssessment;
   postureEvent?: DetectionEvent;
+  comparison?: MADComparisonFrame;
   confidence: number;
   features: Omit<FrameFeature, "timestamp" | "confidence">;
   markers?: SessionMarker[];
@@ -86,6 +96,7 @@ export class SessionRecorder {
     cameraTransform?: CameraTransform | null,
     cameraAssessment?: CameraAssessment | null,
     postureEvent?: DetectionEvent | null,
+    comparison?: MADComparisonFrame | null,
   ): void {
     if (!this.recording) return;
 
@@ -102,6 +113,7 @@ export class SessionRecorder {
       ...(cameraTransform ? { cameraTransform } : {}),
       ...(cameraAssessment ? { cameraAssessment } : {}),
       ...(postureEvent ? { postureEvent } : {}),
+      ...(comparison ? { comparison } : {}),
       confidence: feature.confidence,
       features,
     };
