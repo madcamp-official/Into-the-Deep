@@ -19,9 +19,9 @@ describe("development session preset", () => {
       label: "NORMAL_WORK",
     });
     expect(second?.step).toEqual({
-      atSeconds: 20,
+      atSeconds: 10,
       action: "SCENARIO_STARTED",
-      label: "FORWARD_HEAD",
+      label: "TRANSIENT_ACTION",
     });
   });
 

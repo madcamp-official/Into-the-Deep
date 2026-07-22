@@ -182,8 +182,8 @@ async function main() {
     profile = nextProfile;
     cameraProfile = nextCameraProfile;
     madProfile = createInitialMADProfile({ now: Date.now() });
-    detector = new PostureRuleDetector(profile, madProfile);
-    madUpdater = new V2MadUpdater(madProfile);
+    detector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 5 });
+    madUpdater = new V2MadUpdater(madProfile, { centers: nextProfile.originalCenters });
     trackedAnchor = { x: nextCameraProfile.shoulderCenterX, y: nextCameraProfile.shoulderCenterY };
   }
 

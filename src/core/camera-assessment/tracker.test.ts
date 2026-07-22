@@ -53,4 +53,44 @@ describe("CameraAssessmentTracker", () => {
 
     expect(tracker.update(transform({ translationX: 0.005 }), 700).motionPhase).toBe("MOVING");
   });
+
+  it("recovers after five consecutive good-quality frames", () => {
+    const tracker = new CameraAssessmentTracker();
+    const degraded = transform({
+      trackedPointCount: 5,
+      inlierRatio: 0.4,
+      reprojectionError: 5,
+      confidence: 0.3,
+    });
+
+    tracker.update(transform(), 0);
+    expect(tracker.update(degraded, 100).qualityStatus).toBe("DEGRADED");
+
+    for (let index = 1; index <= 4; index += 1) {
+      const result = tracker.update(transform(), 100 + index * 100);
+      expect(result.qualityStatus).toBe("RECOVERING");
+      expect(result.state).toBe("UNKNOWN");
+    }
+
+    const recovered = tracker.update(transform(), 600);
+    expect(recovered.qualityStatus).toBe("OK");
+    expect(recovered.state).toBe("VALID");
+  });
+
+  it("requires recalibration when poor tracking persists", () => {
+    const tracker = new CameraAssessmentTracker();
+    const degraded = transform({
+      trackedPointCount: 5,
+      inlierRatio: 0.4,
+      reprojectionError: 5,
+      confidence: 0.3,
+    });
+
+    tracker.update(transform(), 0);
+    tracker.update(degraded, 100);
+    const result = tracker.update(degraded, 2200);
+
+    expect(result.qualityStatus).toBe("RECALIBRATION_REQUIRED");
+    expect(result.state).toBe("RECALIBRATION_REQUIRED");
+  });
 });

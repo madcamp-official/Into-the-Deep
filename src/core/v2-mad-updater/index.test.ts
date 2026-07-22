@@ -26,6 +26,23 @@ describe("V2MadUpdater", () => {
     updater.update(createFrame(6000, 0.2), { matchedPosture: "FORWARD_HEAD" });
     expect(updater.getProfile().updateCount).toBe(0);
   });
+
+  it("calculates the window MAD around the calibration center when provided", () => {
+    const profile = createInitialMADProfile({ values: { headXRatio: 0.05 } });
+    const updater = new V2MadUpdater(profile, {
+      centers: { headXRatio: 0 },
+      alpha: 0.95,
+    });
+
+    [0.1, 0.11, 0.09, 0.1, 0.12, 0.08].forEach((value, index) => {
+      updater.update(createFrame(index * 1000, value), {
+        landmarkQuality: { reliable: true, confidence: 0.95 },
+      });
+    });
+
+    expect(updater.getProfile().updateCount).toBe(1);
+    expect(updater.getProfile().values.headXRatio).toBeGreaterThan(0.05);
+  });
 });
 
 function createFrame(timestamp: number, headXRatio: number): FrameFeature {

@@ -1,4 +1,10 @@
-import type { CameraState, FrameFeature, LandmarkQuality, MADProfile, PostureType } from "../types";
+import type {
+  FrameFeature,
+  LandmarkQuality,
+  MADProfile,
+  PostureFeatureName,
+  PostureType,
+} from "../types";
 import { calculateMAD, MAD_FEATURES, updateMADProfile } from "../mad-profile";
 
 export interface V2MadUpdaterOptions {
@@ -7,11 +13,11 @@ export interface V2MadUpdaterOptions {
   alpha?: number;
   motionEnergyThreshold?: number;
   minConfidence?: number;
+  centers?: Partial<Record<PostureFeatureName, number>>;
 }
 
 export interface V2MadUpdateContext {
   landmarkQuality?: Pick<LandmarkQuality, "reliable" | "confidence">;
-  cameraState?: CameraState;
   matchedPosture?: PostureType;
 }
 
@@ -19,8 +25,9 @@ export const DEFAULT_V2_MAD_OPTIONS: Required<V2MadUpdaterOptions> = {
   stableWindowMs: 5000,
   minStableDurationMs: 3000,
   alpha: 0.95,
-  motionEnergyThreshold: 0.08,
+  motionEnergyThreshold: 0.2,
   minConfidence: 0.8,
+  centers: {},
 };
 
 export class V2MadUpdater {
@@ -58,7 +65,7 @@ export class V2MadUpdater {
     const windowMad = Object.fromEntries(
       MAD_FEATURES.flatMap((feature) => {
         const values = this.samples[feature] ?? [];
-        const center = values.length > 0 ? median(values) : undefined;
+        const center = this.options.centers[feature] ?? (values.length > 0 ? median(values) : undefined);
         const mad = center === undefined ? undefined : calculateMAD(values, center);
         return mad === undefined ? [] : [[feature, mad]];
       }),
@@ -87,9 +94,7 @@ export class V2MadUpdater {
       context.landmarkQuality.confidence < this.options.minConfidence
     ) return false;
     if (context.matchedPosture) return false;
-    return context.cameraState === undefined ||
-      context.cameraState === "VALID" ||
-      context.cameraState === "ADJUSTED";
+    return true;
   }
 }
 
