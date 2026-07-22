@@ -40,6 +40,17 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // enough not to repeat the old "blocked genuine detections" failure,
       // tight enough to exclude a real whole-body camera-distance change.
       { feature: "bodyScale", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
+      // shoulderCenterY GT added: tilting the camera itself (not leaning
+      // toward it) also pushes faceToShoulderRatio and bodyScale into
+      // FORWARD_HEAD's range, with no real posture change at all. Live
+      // testing (staying in a genuinely correct posture, only tilting the
+      // camera) across 4 captures scored shoulderCenterY -3.55/-3.57/-4.76/
+      // -5.91 — consistently large and negative, since tilting shifts the
+      // person's whole vertical position in frame. Genuine FORWARD_HEAD
+      // captures (leaning toward the camera, camera untouched) scored
+      // 1.29-2.00 — consistently positive and modest, since the camera
+      // itself doesn't move. 0.5 sits cleanly in the gap between them.
+      { feature: "shoulderCenterY", operator: "GT", threshold: 0.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
@@ -217,6 +228,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // was the wrong fix for the same underlying complaint.
     required: [
       { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+      // bodyScale ABS_LT added: with the fixed-angle side-calibration
+      // correction (feature-normalizer's correctBodyYaw), moving toward the
+      // camera (FORWARD_LEAN/HEAD_DOWN/FORWARD_HEAD) started spuriously
+      // spiking correctedYaw/yawProxy too — live testing under an angled
+      // calibration found all three misfiring as HEAD_TURN, each scoring
+      // bodyScale 1.39-4.41 (moving closer). A genuine head turn alone
+      // shouldn't move bodyScale much since the torso doesn't approach the
+      // camera — this doesn't fully fix the underlying contamination, just
+      // excludes the clearest overlapping case.
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 1, reference: "CALIBRATION" },
     ],
     anyOf: [
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },

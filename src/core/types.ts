@@ -128,6 +128,12 @@ export interface FrameFeature {
   torsoRotationProxy?: number;
   handFaceDistance?: number;
   handShoulderDistance?: number;
+  // Radians. Self-estimated per frame (see feature-normalizer's
+  // estimateBodyYawAngle) during calibration so profile-builder can average
+  // it into a single stable baseline; live frames instead reuse that fixed
+  // baseline angle rather than re-estimating it fresh each frame (too noisy
+  // frame to frame — confirmed live).
+  bodyYawAngle?: number;
 
   // Environment and quality features are recorded with the frame but do not
   // directly decide whether a posture is bad.
