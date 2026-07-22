@@ -318,6 +318,11 @@ npm run dist:mac       # macOS 설치 파일 빌드 (release/)
 ### 폴더 구조
 
 ```
+index.html                 # 개발/검증용 웹 harness 진입점
+product.html               # 실사용 웹앱 진입점
+electron-detector.html     # Electron 백그라운드 detector 창
+electron-overlay.html      # Electron 화면 위 overlay 창
+public/                    # 웹앱 정적 자산·아이콘
 src/
 ├── core/         # 판정 코어 — feature 계산, 캘리브레이션 프로필, posture rule 판정,
 │                 # MAD 정규화, 시간 상태 머신 등 카메라 프레임에 의존하지 않는 순수 로직
@@ -325,7 +330,8 @@ src/
 │                 # 추적, IndexedDB 저장, 요정 UI, 앱 진입점(app/)
 └── evaluation/   # 세션 녹화(recorder)/리플레이(replay-evaluator), 시나리오 라벨링,
                   # 문턱값 스윕, 정확도 분석 등 오프라인 평가 도구
-electron/         # Electron 메인/프리로드 프로세스, 배포 설정
+electron/         # Electron 메인/프리로드 프로세스와 배포 설정
+build/            # 패키징에 사용하는 앱 아이콘
 sample-data/      # 평가용 샘플 JSONL 로그
 docs/
 ├── planning/     # 전체 계획, 3일 병렬 개발 계획
