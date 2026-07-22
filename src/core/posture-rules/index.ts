@@ -228,6 +228,16 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // was the wrong fix for the same underlying complaint.
     required: [
       { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+      // bodyScale ABS_LT added: with the fixed-angle side-calibration
+      // correction (feature-normalizer's correctBodyYaw), moving toward the
+      // camera (FORWARD_LEAN/HEAD_DOWN/FORWARD_HEAD) started spuriously
+      // spiking correctedYaw/yawProxy too — live testing under an angled
+      // calibration found all three misfiring as HEAD_TURN, each scoring
+      // bodyScale 1.39-4.41 (moving closer). A genuine head turn alone
+      // shouldn't move bodyScale much since the torso doesn't approach the
+      // camera — this doesn't fully fix the underlying contamination, just
+      // excludes the clearest overlapping case.
+      { feature: "bodyScale", operator: "ABS_LT", threshold: 1, reference: "CALIBRATION" },
     ],
     anyOf: [
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
