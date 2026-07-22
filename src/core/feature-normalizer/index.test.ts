@@ -440,3 +440,74 @@ describe("applyCameraCorrectionToLandmarks", () => {
     expect(corrected[0].y).toBeCloseTo(0.5, 5);
   });
 });
+
+describe("correctBodyYaw", () => {
+  it("leaves landmarks unchanged when the shoulder line has no depth gap (facing the camera)", async () => {
+    const { correctBodyYaw } = await import("./index");
+    // Note: createLandmarks()'s own default shoulder x-order is reversed
+    // from the rest of this codebase's convention (confirmed against
+    // rawShoulderTilt: "anatomical left shoulder sits at a higher x than
+    // the right" in an unmirrored frame) — explicit here so this test
+    // doesn't depend on that fixture default.
+    const landmarks = createLandmarks({
+      leftShoulder: { x: 0.6, y: 0.6, z: 0, visibility: 1 },
+      rightShoulder: { x: 0.4, y: 0.6, z: 0, visibility: 1 },
+    });
+
+    const corrected = correctBodyYaw(landmarks);
+
+    expect(corrected).toEqual(landmarks);
+  });
+
+  it("zeroes the shoulder z-gap and preserves the true 3D shoulder distance when the body is rotated", async () => {
+    const { correctBodyYaw } = await import("./index");
+    // A 45-degree body rotation: shoulder-line (x, z) vector is (0.2, 0.2).
+    const landmarks = createLandmarks({
+      leftShoulder: { x: 0.6, y: 0.6, z: 0.1, visibility: 1 },
+      rightShoulder: { x: 0.4, y: 0.6, z: -0.1, visibility: 1 },
+    });
+
+    const corrected = correctBodyYaw(landmarks);
+    const left = corrected[LANDMARK_INDEX.leftShoulder];
+    const right = corrected[LANDMARK_INDEX.rightShoulder];
+
+    // z-gap collapses to ~0 (as though shot from directly in front)...
+    expect(left.z - right.z).toBeCloseTo(0, 5);
+    // ...while the true 3D shoulder distance (hypot(0.2, 0.2)) is preserved
+    // as the corrected x-gap, rather than the foreshortened original 0.2.
+    expect(left.x - right.x).toBeCloseTo(Math.hypot(0.2, 0.2), 5);
+    // y is untouched — this only corrects yaw (rotation in the x/z plane).
+    expect(left.y).toBe(0.6);
+    expect(right.y).toBe(0.6);
+  });
+
+  it("rotates other landmarks (not just the shoulders) by the same angle", async () => {
+    const { correctBodyYaw } = await import("./index");
+    const landmarks = createLandmarks({
+      leftShoulder: { x: 0.6, y: 0.6, z: 0.1, visibility: 1 },
+      rightShoulder: { x: 0.4, y: 0.6, z: -0.1, visibility: 1 },
+      nose: { x: 0.5, y: 0.4, z: 0, visibility: 1 },
+    });
+
+    const corrected = correctBodyYaw(landmarks);
+    const nose = corrected[LANDMARK_INDEX.nose];
+
+    // Pivot is the shoulder midpoint (0.5, 0.6, 0); nose sits directly above
+    // it in (x, z) (relativeX=0, relativeZ=0), so a pure yaw rotation about
+    // that pivot leaves it exactly in place — this only confirms the
+    // rotation is actually being applied consistently to every landmark,
+    // not just the two shoulders it was solved from.
+    expect(nose.x).toBeCloseTo(0.5, 5);
+    expect(nose.z).toBeCloseTo(0, 5);
+  });
+
+  it("skips correction when the shoulder line is too degenerate to derive a reliable angle from", async () => {
+    const { correctBodyYaw } = await import("./index");
+    const landmarks = createLandmarks({
+      leftShoulder: { x: 0.5, y: 0.6, z: 0, visibility: 1 },
+      rightShoulder: { x: 0.5, y: 0.6, z: 0, visibility: 1 },
+    });
+
+    expect(correctBodyYaw(landmarks)).toEqual(landmarks);
+  });
+});
