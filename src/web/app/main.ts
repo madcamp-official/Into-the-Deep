@@ -1310,6 +1310,7 @@ async function main() {
             v0PostureEvent: event,
             v2PostureEvent: v2Event,
             madUpdateCount: madProfile.updateCount,
+            madValues: { ...madProfile.values },
           }
           : null;
         recorder.record(

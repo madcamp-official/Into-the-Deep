@@ -3,6 +3,7 @@ import type {
   CameraAssessment,
   CameraTransform,
   DetectionEvent,
+  FeatureVector,
   FrameFeature,
   MADProfile,
   ScenarioLabel,
@@ -15,6 +16,8 @@ export interface MADComparisonFrame {
   v0PostureEvent: DetectionEvent;
   v2PostureEvent: DetectionEvent;
   madUpdateCount: number;
+  /** V2 MAD values at this frame; used to compare initial and final MAD. */
+  madValues?: FeatureVector;
 }
 
 export type SessionMarkerType =

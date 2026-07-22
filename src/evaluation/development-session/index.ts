@@ -65,6 +65,8 @@ export const CAMERA_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
 // bugs or just this timing artifact before any threshold gets retuned.
 export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 0, action: "SCENARIO_STARTED", label: "NORMAL_WORK" },
+  { atSeconds: 10, action: "SCENARIO_STARTED", label: "TRANSIENT_ACTION" },
+  { atSeconds: 15, action: "SCENARIO_ENDED", label: "TRANSIENT_ACTION" },
   { atSeconds: 20, action: "SCENARIO_STARTED", label: "FORWARD_HEAD" },
   { atSeconds: 23, action: "DRIFT_ONSET", label: "FORWARD_HEAD" },
   { atSeconds: 33, action: "SCENARIO_ENDED", label: "FORWARD_HEAD" },
@@ -101,7 +103,9 @@ export const STANDARD_DEVELOPMENT_SESSION: readonly DevelopmentSessionStep[] = [
   { atSeconds: 273, action: "SESSION_ENDED" },
 ];
 
-// Uses every posture scenario that currently has an active alert rule. HEAD_TURN
+// Uses every posture scenario that currently has an active alert rule. The
+// transient-action interval is intentionally retained as a normal-user
+// interval for false-alert measurement. HEAD_TURN
 // is intentionally excluded because its alert is suppressed during normal use;
 // it should not affect the V0/V2 alert comparison.
 export const MAD_COMPARISON_SESSION = STANDARD_DEVELOPMENT_SESSION.filter(
