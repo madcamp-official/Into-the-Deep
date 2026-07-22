@@ -2,7 +2,10 @@ import type { LandmarkName, PostureRule } from "../types";
 
 const CORE: LandmarkName[] = ["nose", "leftShoulder", "rightShoulder"];
 const EYES: LandmarkName[] = [...CORE, "leftEye", "rightEye"];
-const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
+// EARS only used by HEAD_TURN, disabled below (barely-used posture, kept
+// misfiring even after the bodyScale guard) — kept here so re-enabling it
+// doesn't need this line rewritten too.
+// const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
 
 // Thresholds are normalized deviations (feature delta / feature MAD). They
 // are intentionally conservative starting values for development-session tuning.
@@ -206,47 +209,56 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // it only wins the "pure lean, no twist" case it's meant to.
     priority: 2.1,
   },
-  {
-    postureType: "HEAD_TURN",
-    requiredLandmarks: EARS,
-    // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
-    // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
-    // the head yaws the eye line too (2D-projection cross-axis
-    // contamination, the mirror image of the earlier finding that a pure
-    // tilt contaminates yawProxy), so this exclusion was above its own
-    // threshold and blocked the rule from ever matching its own posture.
-    // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
-    // BACKWARD_LEAN no longer competes here anyway (its new
-    // shoulderWidthRatio requirement excludes pure head reorientation), so
-    // the exclusion isn't needed for that either.
-    //
-    // Re-enabled after briefly disabling it: a teammate's fix (posture-
-    // rule-detector's SILENT_POSTURES) suppresses the *alert* for HEAD_TURN
-    // specifically (annoying during calls/meetings) while still wanting it
-    // detected/recorded as BAD for other consumers like the MAD updater —
-    // that needs this rule to still match, so disabling it outright here
-    // was the wrong fix for the same underlying complaint.
-    required: [
-      { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
-      // bodyScale ABS_LT added: with the fixed-angle side-calibration
-      // correction (feature-normalizer's correctBodyYaw), moving toward the
-      // camera (FORWARD_LEAN/HEAD_DOWN/FORWARD_HEAD) started spuriously
-      // spiking correctedYaw/yawProxy too — live testing under an angled
-      // calibration found all three misfiring as HEAD_TURN, each scoring
-      // bodyScale 1.39-4.41 (moving closer). A genuine head turn alone
-      // shouldn't move bodyScale much since the torso doesn't approach the
-      // camera — this doesn't fully fix the underlying contamination, just
-      // excludes the clearest overlapping case.
-      { feature: "bodyScale", operator: "ABS_LT", threshold: 1, reference: "CALIBRATION" },
-    ],
-    anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-    ],
-    supporting: ["headXRatio", "yawProxy", "headRoll"],
-    reason: "head direction differs from the calibrated direction",
-    priority: 0.8,
-  },
+  // HEAD_TURN disabled again: barely used in practice, and even with the
+  // bodyScale guard below it still misfired on a plain frontal-calibration
+  // capture (headXRatio/correctedYaw/yawProxy scores blew up to
+  // -7.67/13.57/13.57 off raw values near 0, i.e. that calibration's MAD for
+  // these features came out too tight — a separate, still-unfixed MAD
+  // sensitivity issue, not something a rule-threshold tweak can fix) while
+  // the user confirmed no actual head turn was happening. Keeping the logic
+  // (not deleting it) since the bodyScale exclusion work is still worth
+  // reusing whenever this gets re-enabled.
+  // {
+  //   postureType: "HEAD_TURN",
+  //   requiredLandmarks: EARS,
+  //   // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
+  //   // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
+  //   // the head yaws the eye line too (2D-projection cross-axis
+  //   // contamination, the mirror image of the earlier finding that a pure
+  //   // tilt contaminates yawProxy), so this exclusion was above its own
+  //   // threshold and blocked the rule from ever matching its own posture.
+  //   // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
+  //   // BACKWARD_LEAN no longer competes here anyway (its new
+  //   // shoulderWidthRatio requirement excludes pure head reorientation), so
+  //   // the exclusion isn't needed for that either.
+  //   //
+  //   // Re-enabled after briefly disabling it: a teammate's fix (posture-
+  //   // rule-detector's SILENT_POSTURES) suppresses the *alert* for HEAD_TURN
+  //   // specifically (annoying during calls/meetings) while still wanting it
+  //   // detected/recorded as BAD for other consumers like the MAD updater —
+  //   // that needs this rule to still match, so disabling it outright here
+  //   // was the wrong fix for the same underlying complaint.
+  //   required: [
+  //     { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+  //     // bodyScale ABS_LT added: with the fixed-angle side-calibration
+  //     // correction (feature-normalizer's correctBodyYaw), moving toward the
+  //     // camera (FORWARD_LEAN/HEAD_DOWN/FORWARD_HEAD) started spuriously
+  //     // spiking correctedYaw/yawProxy too — live testing under an angled
+  //     // calibration found all three misfiring as HEAD_TURN, each scoring
+  //     // bodyScale 1.39-4.41 (moving closer). A genuine head turn alone
+  //     // shouldn't move bodyScale much since the torso doesn't approach the
+  //     // camera — this doesn't fully fix the underlying contamination, just
+  //     // excludes the clearest overlapping case.
+  //     { feature: "bodyScale", operator: "ABS_LT", threshold: 1, reference: "CALIBRATION" },
+  //   ],
+  //   anyOf: [
+  //     { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //     { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //   ],
+  //   supporting: ["headXRatio", "yawProxy", "headRoll"],
+  //   reason: "head direction differs from the calibrated direction",
+  //   priority: 0.8,
+  // },
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
