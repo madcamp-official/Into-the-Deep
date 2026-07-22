@@ -23,17 +23,6 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // a pure head-down pitch with no lean-toward-camera component is a
     // different posture (HEAD_DOWN below), not this one.
     required: [
-      // History: 0.6 (too sensitive) -> 0.8 (session replay: NORMAL_WORK
-      // false-positive 9.2%->7.8%, but genuine recall 69.4%->37.0%) -> live
-      // testing at 0.8 then showed genuine held FORWARD_HEAD scoring right
-      // at the boundary (0.80/1.01/1.12 across 3 captures of the same
-      // hold), so ordinary jitter flickered it in and out of match — the
-      // 0.8 fix traded oversensitivity for under-detection instead of
-      // fixing the real problem (single-frame faceToShoulderRatio doesn't
-      // cleanly separate these cases at any threshold, confirmed by the
-      // replay's own sweep). 0.7 splits the difference (replay: NORMAL_WORK
-      // 8.5%, genuine recall 53.4%) — still a compromise, not a fix.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
@@ -54,6 +43,39 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // 1.29-2.00 — consistently positive and modest, since the camera
       // itself doesn't move. 0.5 sits cleanly in the gap between them.
       { feature: "shoulderCenterY", operator: "GT", threshold: 0.5, reference: "CALIBRATION" },
+    ],
+    // faceToShoulderRatio moved from required into anyOf, and
+    // headShoulderDistanceRatio added alongside it: live testing found a
+    // frontal turtle-neck hold (two captures, 2026-07-21) where
+    // faceToShoulderRatio actually normalized *negative* (-0.57/-0.11,
+    // failing its old GT 0.7 required condition outright — the face never
+    // registered as visually bigger/closer this time) while
+    // headShoulderDistanceRatio normalized strongly negative in both
+    // (-4.08/-3.93) — the head genuinely got much closer to the shoulder
+    // line, just without the face-size growth the old required condition
+    // demanded. That matches this same rule's own history above:
+    // headShoulderDistanceRatio shrinks for genuine turtle neck (previously
+    // measured as low as -13.54), it just isn't the *only* shape a turtle
+    // neck hold takes. Treating the two features as alternatives (either
+    // signal is enough) catches both variants without loosening the
+    // required bodyScale/shoulderCenterY guards that exclude camera-move
+    // false positives.
+    anyOf: [
+      // History: 0.6 (too sensitive) -> 0.8 (session replay: NORMAL_WORK
+      // false-positive 9.2%->7.8%, but genuine recall 69.4%->37.0%) -> live
+      // testing at 0.8 then showed genuine held FORWARD_HEAD scoring right
+      // at the boundary (0.80/1.01/1.12 across 3 captures of the same
+      // hold), so ordinary jitter flickered it in and out of match — the
+      // 0.8 fix traded oversensitivity for under-detection instead of
+      // fixing the real problem (single-frame faceToShoulderRatio doesn't
+      // cleanly separate these cases at any threshold, confirmed by the
+      // replay's own sweep). 0.7 splits the difference (replay: NORMAL_WORK
+      // 8.5%, genuine recall 53.4%) — still a compromise, not a fix.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
+      // -2 sits at roughly half the two live genuine samples' magnitude
+      // (-4.08/-3.93), leaving margin against ordinary jitter while still
+      // comfortably catching both.
+      { feature: "headShoulderDistanceRatio", operator: "LT", threshold: -2, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
