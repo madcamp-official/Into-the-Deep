@@ -147,38 +147,31 @@ export class PostureRuleDetector {
     }
 
     const matches = evaluatePostureRules(feature, this.profile, this.madProfile, this.rules, quality);
-    const selected = matches[0];
-    const runnerUp = matches[1];
-    const isAmbiguous = Boolean(selected && runnerUp && runnerUp.score >= selected.score * AMBIGUITY_RATIO);
-
-    if (matches.length === 0 || isAmbiguous) {
-      // Ambiguous frames (two rules scoring within AMBIGUITY_RATIO of each
-      // other) now get the same jitter-bridging grace as a genuine no-match
-      // frame instead of clearing state on the spot. Confirmed live: a
-      // real, unchanged bad posture regularly drifts two correlated rules'
-      // scores this close together for a frame or two, and immediately
-      // clearing badStartedAtByPosture/lastMatch on that alone dropped a
-      // persist:true fairy alert (and reset the whole sustainedSeconds
-      // dwell from scratch) while the person hadn't moved at all.
+    if (matches.length === 0) {
       const graceStartedAt = this.noMatchStartedAt ?? feature.timestamp;
       this.noMatchStartedAt = graceStartedAt;
       if (feature.timestamp - graceStartedAt < this.noMatchGraceMs && this.lastMatch) {
-        return this.buildBadEvent(feature, this.lastMatch, matches.length > 0 ? matches : [this.lastMatch]);
+        return this.buildBadEvent(feature, this.lastMatch, [this.lastMatch]);
       }
       this.badStartedAtByPosture.clear();
       this.lastMatch = null;
-      return isAmbiguous
-        ? {
-            timestamp: feature.timestamp,
-            state: "UNKNOWN",
-            alert: false,
-            postureCandidates: matches.map(({ postureType, score }) => ({ postureType, score })),
-            reason: [`ambiguous_posture:${selected.postureType},${runnerUp.postureType}`],
-          }
-        : { timestamp: feature.timestamp, state: "STABLE", alert: false, reason: [] };
+      return { timestamp: feature.timestamp, state: "STABLE", alert: false, reason: [] };
     }
     this.noMatchStartedAt = null;
 
+    const selected = matches[0];
+    const runnerUp = matches[1];
+    if (runnerUp && runnerUp.score >= selected.score * AMBIGUITY_RATIO) {
+      this.badStartedAtByPosture.clear();
+      this.lastMatch = null;
+      return {
+        timestamp: feature.timestamp,
+        state: "UNKNOWN",
+        alert: false,
+        postureCandidates: matches.map(({ postureType, score }) => ({ postureType, score })),
+        reason: [`ambiguous_posture:${selected.postureType},${runnerUp.postureType}`],
+      };
+    }
     this.lastMatch = selected;
     return this.buildBadEvent(feature, selected, matches);
   }

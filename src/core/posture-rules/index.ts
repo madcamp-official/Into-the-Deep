@@ -82,7 +82,7 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // genuine HEAD_DOWN scored negative-to-flat (p10 -1.95, median
       // -0.52, p90 0.53) — a real gap between HEAD_DOWN's p90 and
       // FORWARD_HEAD's p10. 0.8 sits in that gap.
-      { feature: "headRoll", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
+      // { feature: "headRoll", operator: "GT", threshold: 0.8, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",
