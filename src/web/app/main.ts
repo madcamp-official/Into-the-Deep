@@ -31,10 +31,12 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 // jitter from real motion — live captures showed a static ARMREST_LEAN
 // hold spike to 0.398 while a genuine mouse-reach frame read as low as
 // 0.190 (see posture-rule-detector's motionSustainMs comment). Raised
-// 0.2 -> 0.35: user reported motion detection still triggering too easily
-// in everyday use even with the sustain-duration check; moderate bump
-// rather than chasing an exact boundary again.
-const V2_MOTION_ENERGY_GATE = 0.35;
+// 0.2 -> 0.35 (still too sensitive in everyday use) -> 0.7: user explicitly
+// asked to push this well past any "correct" boundary — accepting that
+// some genuine motion (the low end of the 0.19-0.93 range seen live) will
+// no longer register as MOVING, in exchange for jitter almost never
+// triggering a hold.
+const V2_MOTION_ENERGY_GATE = 0.7;
 import { MovementClassifier } from "../../core/environment-motion";
 import {
   SessionRecorder,
