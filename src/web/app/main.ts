@@ -499,6 +499,7 @@ async function main() {
     postureDetector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 0 });
     v2PostureDetector = new PostureRuleDetector(profile, madProfile, {
       motionEnergyGate: V2_MOTION_ENERGY_GATE,
+      sustainedSeconds: 5,
     });
     v2MadUpdater = new V2MadUpdater(madProfile, { centers: nextProfile.originalCenters });
     recordButton.disabled = false;
@@ -747,11 +748,14 @@ async function main() {
     });
     scenarioActive = false;
     driftOnsetButton.disabled = true;
+    scenarioEndNoticeText = `${postureScenarioNameKorean(completedScenario)} 시나리오가 끝났습니다. 정상 자세로 돌아와 주세요.`;
+    scenarioEndNoticeUntil = timestamp + 1500;
+    // Update the instruction in the same call that writes SCENARIO_ENDED so
+    // the visible notice does not wait for the next animation-frame tick.
+    sessionInstruction.textContent = scenarioEndNoticeText;
     if (isDriftScenario(completedScenario) || completedScenario === "TRANSIENT_ACTION") {
       sessionAudio.notifyReturnToNormal();
     }
-    scenarioEndNoticeText = `${postureScenarioNameKorean(completedScenario)} 시나리오가 끝났습니다. 정상 자세로 돌아와 주세요.`;
-    scenarioEndNoticeUntil = timestamp + 1500;
   }
 
   function startCameraBoundarySession(): void {

@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   const handLandmarker = await createHandLandmarker();
 
   let madProfile: MADProfile = stored.madProfile ?? createInitialMADProfile({ now: Date.now() });
-  const detector = new PostureRuleDetector(stored.userProfile, madProfile);
+  const detector = new PostureRuleDetector(stored.userProfile, madProfile, { sustainedSeconds: 5 });
   const madUpdater = new V2MadUpdater(madProfile, { centers: stored.userProfile.originalCenters });
 
   let previousFeature: FrameFeature | null = null;
