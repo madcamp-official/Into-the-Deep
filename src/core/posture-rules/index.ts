@@ -16,7 +16,11 @@ import type { LandmarkName, PostureRule } from "../types";
 
 const CORE: LandmarkName[] = ["nose", "leftShoulder", "rightShoulder"];
 const EYES: LandmarkName[] = [...CORE, "leftEye", "rightEye"];
-const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
+// EARS only used by HEAD_TURN, disabled below (barely-used posture, and
+// live testing found it can win a priority contest against TORSO_TWIST
+// when a twist also involves noticeable head rotation) — kept here so
+// re-enabling it doesn't need this line rewritten too.
+// const EARS: LandmarkName[] = [...EYES, "leftEar", "rightEar"];
 
 // Thresholds are normalized deviations (feature delta / feature MAD). They
 // are intentionally conservative starting values for development-session tuning.
@@ -209,37 +213,44 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     // it only wins the "pure lean, no twist" case it's meant to.
     priority: 2.1,
   },
-  {
-    postureType: "HEAD_TURN",
-    requiredLandmarks: EARS,
-    // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
-    // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
-    // the head yaws the eye line too (2D-projection cross-axis
-    // contamination, the mirror image of the earlier finding that a pure
-    // tilt contaminates yawProxy), so this exclusion was above its own
-    // threshold and blocked the rule from ever matching its own posture.
-    // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
-    // BACKWARD_LEAN no longer competes here anyway (its new
-    // shoulderWidthRatio requirement excludes pure head reorientation), so
-    // the exclusion isn't needed for that either.
-    //
-    // Re-enabled after briefly disabling it: a teammate's fix (posture-
-    // rule-detector's SILENT_POSTURES) suppresses the *alert* for HEAD_TURN
-    // specifically (annoying during calls/meetings) while still wanting it
-    // detected/recorded as BAD for other consumers like the MAD updater —
-    // that needs this rule to still match, so disabling it outright here
-    // was the wrong fix for the same underlying complaint.
-    required: [
-      { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
-    ],
-    anyOf: [
-      { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-      { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
-    ],
-    supporting: ["headXRatio", "yawProxy", "headRoll"],
-    reason: "head direction differs from the calibrated direction",
-    priority: 0.8,
-  },
+  // HEAD_TURN disabled (not deleted): barely used in practice, and live
+  // testing just found it can win a priority contest against TORSO_TWIST
+  // whenever a twist also involves noticeable head rotation (headXRatio
+  // 17.71 vs a genuine-twist-only capture's 3.22, dragging TORSO_TWIST's
+  // evidence score down via its own weakest condition) — same underlying
+  // complaint as the side-angle version's disable, now applying to the
+  // frontal rule set too after reverting it to 56e0bb6 re-activated this.
+  // {
+  //   postureType: "HEAD_TURN",
+  //   requiredLandmarks: EARS,
+  //   // headRoll ABS_LT exclusion removed: replaying session-1784560098508.jsonl
+  //   // showed real HEAD_TURN groundtruth averages headRoll -3.60 — turning
+  //   // the head yaws the eye line too (2D-projection cross-axis
+  //   // contamination, the mirror image of the earlier finding that a pure
+  //   // tilt contaminates yawProxy), so this exclusion was above its own
+  //   // threshold and blocked the rule from ever matching its own posture.
+  //   // That's why HEAD_TURN was being swallowed entirely by BACKWARD_LEAN.
+  //   // BACKWARD_LEAN no longer competes here anyway (its new
+  //   // shoulderWidthRatio requirement excludes pure head reorientation), so
+  //   // the exclusion isn't needed for that either.
+  //   //
+  //   // Re-enabled after briefly disabling it: a teammate's fix (posture-
+  //   // rule-detector's SILENT_POSTURES) suppresses the *alert* for HEAD_TURN
+  //   // specifically (annoying during calls/meetings) while still wanting it
+  //   // detected/recorded as BAD for other consumers like the MAD updater —
+  //   // that needs this rule to still match, so disabling it outright here
+  //   // was the wrong fix for the same underlying complaint.
+  //   required: [
+  //     { feature: "headXRatio", operator: "ABS_GT", threshold: 3, reference: "CALIBRATION" },
+  //   ],
+  //   anyOf: [
+  //     { feature: "correctedYaw", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //     { feature: "yawProxy", operator: "ABS_GT", threshold: 5, reference: "CALIBRATION" },
+  //   ],
+  //   supporting: ["headXRatio", "yawProxy", "headRoll"],
+  //   reason: "head direction differs from the calibrated direction",
+  //   priority: 0.8,
+  // },
   {
     postureType: "HEAD_TILT",
     requiredLandmarks: EYES,
