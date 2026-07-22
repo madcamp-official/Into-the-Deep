@@ -41,7 +41,7 @@ directly comparable `DetectionEvent[]`. `createV1Detector` needs a full
 
 File: `src/evaluation/v0-v1-comparison.ts`
 
-Implements the Day 3 completion target from plan.md section 23
+Implements the Day 3 completion target from `docs/planning/plan.md` section 23
 ("저장된 로그에서 V0/V1 비교 가능", "V0·V1 replay 비교 스크립트를 CI에서도
 동일하게 실행되도록 연결"):
 
@@ -89,7 +89,7 @@ otherwise-normal work. Ground truth: `NORMAL_WORK` (not bad posture).
 
 - **V0**: `yawProxy` was added as a plain absolute-threshold signal (see
   `docs/B_structure.md`), so this reliably fires — by design, V0 is meant
-  to be maximally strict (plan.md's "(a) 기준 중 하나라도 벗어나면 바로
+  to be maximally strict (`docs/planning/plan.md`'s "(a) 기준 중 하나라도 벗어나면 바로
   지적" approach) and over-collects false positives on purpose.
 - **V1**: not fixed by personalization alone. `PersonalizedDriftDetector`
   includes `yawProxy` in its weighted deviation score with no contextual

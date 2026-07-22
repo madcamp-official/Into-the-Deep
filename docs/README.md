@@ -1,3 +1,10 @@
 # docs
 
-Design notes, evaluation write-ups, and demo material go here (see `plan.md` section 27 for the target repo layout).
+프로젝트 설계·협업·평가 문서를 영역별로 관리한다.
+
+| 디렉토리 | 내용 |
+|---|---|
+| `planning/` | 전체 계획과 3일 병렬 개발 계획 |
+| `design/` | feature 및 공통 결정사항 |
+| `team/` | 팀원별 작업 구조와 협업 규칙 |
+| `diagrams/` | 발표·구조도 이미지와 Mermaid 원본 |

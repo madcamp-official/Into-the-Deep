@@ -93,7 +93,7 @@ V2: 사용자별 중심값 + MAD, 안정적인 정상 구간에서 업데이트
 | `T_cooldown` | 8.0초 | 같은 `postureType` 재알림 억제 (wall-clock, `ALERTED` 시각 기준) |
 | `T_hold_reset` | 4.0초 | `UNKNOWN`/`RECALIBRATION_REQUIRED`/motionEnergy 게이트로 인한 hold가 이보다 길면 dwell timer 리셋 |
 
-`SLOW_DRIFT_WATCH`(서서히 무너지는 자세, plan.md 13절)는 이번 5번 결정에서는 다루지 않는다. 필요해지면 위와 동일한 dwell timer 구조에 더 긴 window를 적용해 `DRIFT_SUSPECTED` 앞 단계로 추가하는 방향으로 확장한다.
+`SLOW_DRIFT_WATCH`(서서히 무너지는 자세, `docs/planning/plan.md` 13절)는 이번 5번 결정에서는 다루지 않는다. 필요해지면 위와 동일한 dwell timer 구조에 더 긴 window를 적용해 `DRIFT_SUSPECTED` 앞 단계로 추가하는 방향으로 확장한다.
 
 6. 환경 변화 처리
 
