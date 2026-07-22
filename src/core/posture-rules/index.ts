@@ -413,7 +413,30 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
     postureType: "TORSO_TWIST",
     requiredLandmarks: CORE,
     required: [
-      { feature: "shoulderWidthRatio", operator: "LT", threshold: -1.25, reference: "CALIBRATION" },
+      // Was `shoulderWidthRatio LT -1.25` (twist assumed to always shrink
+      // projected shoulder width) until session-1784717447733.jsonl replay
+      // (322 genuine TORSO_TWIST frames under an active side-angle yaw
+      // correction) showed shoulderWidthRatio coming back strongly
+      // *positive* (median +5.88) instead — the fixed-angle correction
+      // isn't symmetric with respect to twist direction relative to its own
+      // baked-in rotation, so "shrinks" only held for one twist direction.
+      // Switched to ABS_GT (either direction) plus the faceSize guard below
+      // to discriminate real twists from BACKWARD_LEAN/FORWARD_LEAN, which
+      // also swing shoulderWidthRatio by a large magnitude in either
+      // direction depending on lean depth.
+      { feature: "shoulderWidthRatio", operator: "ABS_GT", threshold: 1.25, reference: "CALIBRATION" },
+      // faceSize ABS_LT: a twist rotates the shoulders in place (the head
+      // doesn't move closer to or farther from the camera), while leaning
+      // forward/backward moves the whole body and changes shoulder width
+      // AND face size together (BACKWARD_LEAN in the same session replay:
+      // shoulderWidthRatio median -6.50, i.e. a similarly large magnitude
+      // to the twist's +5.88 — the two are NOT separable by
+      // shoulderWidthRatio magnitude alone). faceSize is the raw eye-to-eye
+      // distance, independent of shoulderWidth, so it stays flat for a pure
+      // twist but moves for a real lean. Threshold not yet live-verified
+      // (faceSize is a brand new feature) — starting conservative, matching
+      // the scale of the other ABS_LT guards below.
+      { feature: "faceSize", operator: "ABS_LT", threshold: 1.5, reference: "CALIBRATION" },
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       // shoulderCenterY ABS_LT added: a *deep* BACKWARD_LEAN (well past the
       // shallow leans BACKWARD_LEAN's own priority fix above was tuned
