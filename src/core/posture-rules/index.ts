@@ -867,31 +867,27 @@ export const SIDE_ANGLE_POSTURE_RULES: readonly PostureRule[] = [
   // Side-angle-calibration variant of TORSO_TWIST: under an active
   // fixed-angle yaw correction, a twist's shoulderWidthRatio can swing
   // either direction depending on twist direction relative to the
-  // calibration's own baked-in rotation — confirmed live via
-  // session-1784717447733.jsonl replay (322 genuine TORSO_TWIST frames
-  // scored shoulderWidthRatio median +5.88, the opposite sign from the
-  // frontal version's LT -1.25 assumption). Checks magnitude only (either
-  // sign) and adds faceSize (raw eye-to-eye distance, independent of
-  // shoulderWidth) as a guard: a twist rotates the shoulders in place (face
-  // size stays flat), while leaning forward/backward moves the whole body
-  // and changes shoulder width and face size together.
+  // calibration's own baked-in rotation — confirmed live across multiple
+  // sessions (shoulderWidthRatio median +5.88 in one, -6.14 in another,
+  // both genuine twists). Tried ABS_GT (either sign) + a faceSize guard
+  // (raw eye-to-eye distance, meant to catch "shoulders rotated in place,
+  // face didn't move closer/farther") to handle both directions at once,
+  // but faceSize itself turned out unreliable at extreme angles (session-
+  // 1784725283441.jsonl, -59.8 degree calibration: genuine TORSO_TWIST
+  // scored faceSize median -4.41, failing its own ABS_LT 2.0 guard
+  // outright — so TORSO_TWIST never even qualified to compete, and
+  // HEAD_DOWN won 96% of its own ground truth by default) and it was
+  // over-triggering broadly on unrelated postures (NORMAL_WORK 14%,
+  // TRANSIENT_ACTION 36%, SHOULDER_ASYMMETRY 68%). Simplified back to a
+  // single direction (GT, not ABS_GT) with no faceSize guard, same as the
+  // frontal version's approach — accepts that a twist in the *other*
+  // direction won't be caught as TORSO_TWIST specifically (user's explicit
+  // call), in exchange for not needing an unreliable extra guard.
   {
     postureType: "TORSO_TWIST",
     requiredLandmarks: SIDE_CORE,
     required: [
-      { feature: "shoulderWidthRatio", operator: "ABS_GT", threshold: 1.25, reference: "CALIBRATION" },
-      // Raised 1.5 -> 2.0: live testing under a large side-angle calibration
-      // found genuine twist captures scoring faceSize 1.25/1.85 (the 1.85
-      // one failed outright at 1.5), while genuine HEAD_DOWN captures in the
-      // same session scored -3.05/-3.39 — a clear gap, so 2.0 covers both
-      // twist samples while still excluding real posture changes. Still
-      // doesn't cover every case: a twist that swings the live angle
-      // drastically past the calibrated baseline (confirmed live:
-      // calibrated -58.1 degrees, twisted live to -2.7 degrees, a 55+
-      // degree swing) scored faceSize -3.39 — likely MediaPipe's own eye
-      // tracking becoming unreliable at that extreme an angle, not
-      // something a threshold alone fixes.
-      { feature: "faceSize", operator: "ABS_LT", threshold: 2.0, reference: "CALIBRATION" },
+      { feature: "shoulderWidthRatio", operator: "GT", threshold: 1.25, reference: "CALIBRATION" },
       { feature: "correctedYaw", operator: "ABS_GT", threshold: 2, reference: "CALIBRATION" },
       { feature: "shoulderCenterY", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
       { feature: "shoulderCenterX", operator: "ABS_LT", threshold: 1.5, reference: "CALIBRATION" },
