@@ -788,7 +788,15 @@ async function main() {
     // the visible notice does not wait for the next animation-frame tick.
     sessionInstruction.textContent = scenarioEndNoticeText;
     if (isDriftScenario(completedScenario) || completedScenario === "TRANSIENT_ACTION") {
-      sessionAudio.notifyReturnToNormal();
+      // Let the browser paint the end notice before starting the audio cue.
+      // A second frame avoids the cue being perceived before the text appears.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (performance.now() <= scenarioEndNoticeUntil) {
+            sessionAudio.notifyReturnToNormal();
+          }
+        });
+      });
     }
   }
 

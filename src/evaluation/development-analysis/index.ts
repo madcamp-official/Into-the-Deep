@@ -75,7 +75,7 @@ export function analyzeDevelopmentSession(
       stableWindowMs: 5000,
       minStableDurationMs: 3000,
       alpha: 0.95,
-      motionEnergyThreshold: 0.2,
+      motionEnergyThreshold: 1.0,
     },
     notes: [
       "Use this report to review V0 values before fixing them.",

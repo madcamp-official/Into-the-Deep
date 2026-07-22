@@ -27,6 +27,12 @@ export interface MADComparisonDetectorMetrics {
   falseAlertsByPredictedPosture: Record<string, number>;
   /** Actual scenario label -> predicted posture candidate. */
   candidateConfusion: ConfusionMatrix;
+  /** Alert frames divided by all labeled bad-posture frames. */
+  alertPersistenceRate: number;
+  /** Extra alert starts after the first alert in the same posture scenario. */
+  alertFragmentationCount: number;
+  /** Mean duration of one contiguous alert run during normal-user intervals. */
+  normalAlertAverageDurationMs: number | null;
 }
 
 export interface MADFeatureComparison {
@@ -142,6 +148,9 @@ export function formatMADComparisonReport(report: MADComparisonReport): string {
     `${label} posture false alerts: ${value.postureFalseAlertCount}`,
     `${label} posture false alerts by actual posture: ${formatCountMap(value.postureFalseAlertsByLabel)}`,
     `${label} false alerts by predicted posture: ${formatCountMap(value.falseAlertsByPredictedPosture)}`,
+    `${label} alert persistence during posture: ${percent(value.alertPersistenceRate)}`,
+    `${label} alert fragmentation count: ${value.alertFragmentationCount}`,
+    `${label} normal alert average duration: ${formatDuration(value.normalAlertAverageDurationMs)}`,
   ];
   const confusion = (label: string, matrix: ConfusionMatrix): string[] => [
     `${label} candidate confusion:`,
@@ -237,6 +246,9 @@ function summarizeDetector(
     postureFalseAlertsByLabel: postureFalseAlertsByLabel(entries, eventKey),
     falseAlertsByPredictedPosture: falseAlertsByPredictedPosture(entries, eventKey),
     candidateConfusion: buildCandidateConfusion(entries, eventKey),
+    alertPersistenceRate: calculateAlertPersistenceRate(entries, eventKey),
+    alertFragmentationCount: calculateAlertFragmentation(entries, eventKey),
+    normalAlertAverageDurationMs: calculateNormalAlertAverageDuration(entries, eventKey),
   };
 }
 
@@ -334,6 +346,72 @@ function buildCandidateConfusion(entries: readonly SessionLogEntry[], eventKey: 
   return matrix;
 }
 
+function calculateAlertPersistenceRate(
+  entries: readonly SessionLogEntry[],
+  eventKey: EventKey,
+): number {
+  const postureEntries = entries.filter((entry) => !isNormalEntry(entry));
+  if (postureEntries.length === 0) return 0;
+  return rate(postureEntries.filter((entry) => isAlert(entry, eventKey)).length, postureEntries.length);
+}
+
+function calculateAlertFragmentation(
+  entries: readonly SessionLogEntry[],
+  eventKey: EventKey,
+): number {
+  let fragmentation = 0;
+  let currentLabel: string | null = null;
+  let previousAlert = false;
+  let alertStarts = 0;
+  for (const entry of entries) {
+    if (isNormalEntry(entry)) {
+      if (currentLabel !== null) fragmentation += Math.max(0, alertStarts - 1);
+      currentLabel = null;
+      previousAlert = false;
+      alertStarts = 0;
+      continue;
+    }
+    if (entry.groundTruth !== currentLabel) {
+      if (currentLabel !== null) fragmentation += Math.max(0, alertStarts - 1);
+      currentLabel = entry.groundTruth;
+      previousAlert = false;
+      alertStarts = 0;
+    }
+    const alert = isAlert(entry, eventKey);
+    if (alert && !previousAlert) alertStarts += 1;
+    previousAlert = alert;
+  }
+  if (currentLabel !== null) fragmentation += Math.max(0, alertStarts - 1);
+  return fragmentation;
+}
+
+function calculateNormalAlertAverageDuration(
+  entries: readonly SessionLogEntry[],
+  eventKey: EventKey,
+): number | null {
+  const durations: number[] = [];
+  let alertStartedAt: number | null = null;
+  for (const entry of entries) {
+    if (!isNormalEntry(entry)) {
+      if (alertStartedAt !== null) durations.push(entry.timestamp - alertStartedAt);
+      alertStartedAt = null;
+      continue;
+    }
+    const alert = isAlert(entry, eventKey);
+    if (alert && alertStartedAt === null) alertStartedAt = entry.timestamp;
+    if (!alert && alertStartedAt !== null) {
+      durations.push(entry.timestamp - alertStartedAt);
+      alertStartedAt = null;
+    }
+  }
+  if (alertStartedAt !== null && entries.length > 0) {
+    durations.push(entries[entries.length - 1].timestamp - alertStartedAt);
+  }
+  return durations.length === 0
+    ? null
+    : durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
+}
+
 function buildMADComparison(initial: FeatureVector, final: FeatureVector): MADFeatureComparison[] {
   return MAD_FEATURES.map((feature) => {
     const initialValue = initial[feature] ?? null;
@@ -377,6 +455,10 @@ function rate(numerator: number, denominator: number): number {
 
 function formatNullable(value: number | null, percent = false): string {
   return value === null ? "n/a" : percent ? `${(value * 100).toFixed(1)}%` : value.toFixed(4);
+}
+
+function formatDuration(value: number | null): string {
+  return value === null ? "n/a" : `${(value / 1000).toFixed(2)}s`;
 }
 
 function formatCountMap(values: Record<string, number>): string {
