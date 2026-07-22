@@ -23,4 +23,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Sent by the headless detector window on startup when there's no saved
   // profile yet; main.cjs reacts by auto-opening the calibration window.
   notifyNoProfile: () => ipcRenderer.send("no-profile"),
+
+  // Whether calibration has already completed once during this run of the
+  // app (main process lifetime) — resets to false on every app launch, so a
+  // saved profile left over from before a power-off/power-on isn't enough on
+  // its own to skip calibration. See calibratedThisRun in main.cjs.
+  getRunCalibrated: () => ipcRenderer.invoke("get-run-calibrated"),
+  markRunCalibrated: () => ipcRenderer.send("mark-run-calibrated"),
 });

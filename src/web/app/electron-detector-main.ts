@@ -18,6 +18,8 @@ import { V2MadUpdater } from "../../core/v2-mad-updater";
 import { generateFeedback } from "../../core/feedback-generator";
 import { loadProfiles } from "../indexeddb-storage";
 import {
+  describePersonRecoveredDetail,
+  describePersonRecoveredLabel,
   describePostureDetail,
   describePostureLabel,
   describePresenceDetail,
@@ -50,6 +52,19 @@ const FAIRY_RETRIGGER_COOLDOWN_MS = 15000;
 const LOOP_INTERVAL_MS = 33; // ~30fps
 
 async function main(): Promise<void> {
+  // electronAPI is only optional on the plain web build (see
+  // electron-api.d.ts); this window is Electron-only, so it's always
+  // injected here.
+  const electronAPI = window.electronAPI!;
+
+  // A saved profile on disk isn't enough on its own to skip calibration —
+  // it may be left over from a run before the last power-off/power-on.
+  // Only trust it if this same app run already calibrated once (e.g. this
+  // window is being recreated after the calibration window closed).
+  // Otherwise treat it like a first run and send the user through
+  // calibration again, same as having no profile at all.
+  const runCalibrated = await electronAPI.getRunCalibrated();
+
   // Check for a profile *before* touching the camera at all: Windows
   // webcams are typically single-consumer, so this window must not hold
   // the stream open while there's no profile to detect against — that's
@@ -57,17 +72,22 @@ async function main(): Promise<void> {
   // product.html and needs the camera for itself.
   let stored;
   try {
-    stored = await loadProfiles();
+    stored = runCalibrated ? await loadProfiles() : null;
   } catch (error) {
     console.error("failed to load saved profile", error);
     stored = null;
   }
 
   if (!stored) {
-    console.warn("no saved posture profile yet — asking main to open calibration");
-    // First run (or a cleared profile): jump straight to calibration
-    // instead of waiting for someone to find the tray icon.
-    window.electronAPI.notifyNoProfile();
+    console.warn(
+      runCalibrated
+        ? "no saved posture profile yet — asking main to open calibration"
+        : "saved profile predates this run — forcing recalibration",
+    );
+    // First run (or a cleared profile, or a fresh app launch since the
+    // saved profile was made): jump straight to calibration instead of
+    // waiting for someone to find the tray icon.
+    electronAPI.notifyNoProfile();
     return;
   }
 
@@ -109,6 +129,13 @@ async function main(): Promise<void> {
   let noPersonSince: number | null = null;
   let noPersonFairyShowing = false;
   let noPersonFairyLastShownAt = 0;
+  // Mirrors the noPerson* trio above but for "a person is in frame but
+  // landmarks aren't reliable enough to read posture" (describeUnreliableState
+  // returning "UNKNOWN") — the other half of the !quality.reliable branch,
+  // so it needs its own trigger-delay/cooldown state to not fight noPerson's.
+  let unknownSince: number | null = null;
+  let unknownFairyShowing = false;
+  let unknownFairyLastShownAt = 0;
 
   function loop(): void {
     const timestamp = performance.now();
@@ -124,12 +151,14 @@ async function main(): Promise<void> {
       const presenceState = describeUnreliableState(quality);
 
       if (presenceState === "NO_PERSON") {
+        unknownSince = null;
+        unknownFairyShowing = false;
         if (noPersonSince === null) noPersonSince = timestamp;
         const sustainedMs = timestamp - noPersonSince;
         const canRetrigger =
           !noPersonFairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
         if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
-          window.electronAPI.sendPostureAlert({
+          electronAPI.sendPostureAlert({
             title: describePresenceLabel(presenceState, wasTracking),
             message: describePresenceDetail(presenceState, wasTracking),
           });
@@ -139,14 +168,38 @@ async function main(): Promise<void> {
       } else {
         noPersonSince = null;
         noPersonFairyShowing = false;
+        if (unknownSince === null) unknownSince = timestamp;
+        const sustainedMs = timestamp - unknownSince;
+        const canRetrigger =
+          !unknownFairyShowing || timestamp - unknownFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
+        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+          electronAPI.sendPostureAlert({
+            title: describePresenceLabel(presenceState, wasTracking),
+            message: describePresenceDetail(presenceState, wasTracking),
+          });
+          unknownFairyLastShownAt = timestamp;
+          unknownFairyShowing = true;
+        }
       }
 
       setTimeout(loop, LOOP_INTERVAL_MS);
       return;
     }
 
+    if (noPersonFairyShowing || unknownFairyShowing) {
+      // Only announce recovery if the corresponding "not detected"/"not
+      // recognized" alert had actually fired (past its own trigger delay) —
+      // otherwise a sub-2.5s flicker would announce a loss that was never
+      // actually shown to the user.
+      electronAPI.sendPostureAlert({
+        title: describePersonRecoveredLabel(),
+        message: describePersonRecoveredDetail(),
+      });
+    }
     noPersonSince = null;
     noPersonFairyShowing = false;
+    unknownSince = null;
+    unknownFairyShowing = false;
     trackedAnchor = anchorFromLandmarks(landmarks) ?? trackedAnchor;
 
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
@@ -172,7 +225,7 @@ async function main(): Promise<void> {
 
       if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
         const feedback = generateFeedback(event);
-        window.electronAPI.sendPostureAlert({
+        electronAPI.sendPostureAlert({
           title: describePostureLabel(event),
           message: describePostureDetail(event, feedback.message),
         });

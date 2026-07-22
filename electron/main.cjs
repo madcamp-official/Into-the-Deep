@@ -50,6 +50,15 @@ let overlayWindow = null;
 let calibrationWindow = null;
 let tray = null;
 
+// Reset to false every time this process starts (app launch, including the
+// openAtLogin auto-start after a reboot) — never persisted to disk. Renderers
+// use this (via get-run-calibrated/mark-run-calibrated IPC) to tell "already
+// calibrated earlier in this run" apart from "calibrated in some previous
+// run, saved profile just happens to still be on disk" — only the former
+// should be allowed to skip straight to detection, so a saved profile alone
+// is no longer enough to skip calibration after a power-off/power-on.
+let calibratedThisRun = false;
+
 function getDevServerUrlFromArgs() {
   const flagIndex = process.argv.indexOf("--url");
   if (flagIndex !== -1 && process.argv[flagIndex + 1]) {
@@ -153,6 +162,7 @@ function openCalibrationWindow() {
     height: 720,
     icon: APP_ICON_PATH,
     webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -256,6 +266,14 @@ ipcMain.on("set-ignore-mouse-events", (event, ignore) => {
 // this launch automatically at login.
 ipcMain.on("no-profile", () => {
   openCalibrationWindow();
+});
+
+// Renderers check this before trusting a saved profile off disk — see
+// calibratedThisRun above. Read via invoke (needs a return value), written
+// via a fire-and-forget send once product-main.ts finishes calibrating.
+ipcMain.handle("get-run-calibrated", () => calibratedThisRun);
+ipcMain.on("mark-run-calibrated", () => {
+  calibratedThisRun = true;
 });
 
 app.on("window-all-closed", () => {
