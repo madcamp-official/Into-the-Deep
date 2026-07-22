@@ -25,7 +25,9 @@ export const DEFAULT_V2_MAD_OPTIONS: Required<V2MadUpdaterOptions> = {
   stableWindowMs: 5000,
   minStableDurationMs: 3000,
   alpha: 0.95,
-  motionEnergyThreshold: 0.2,
+  // Match the current V2 detector gate. Small natural movements should not
+  // reset the MAD window; explicit posture matches are still excluded below.
+  motionEnergyThreshold: 1.0,
   minConfidence: 0.8,
   centers: {},
 };
