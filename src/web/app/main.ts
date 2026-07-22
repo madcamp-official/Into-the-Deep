@@ -1153,11 +1153,18 @@ async function main() {
     const correctedHands = correctionTransform
       ? applyCameraCorrectionToHandLandmarks(handResult.landmarks, correctionTransform)
       : handResult.landmarks;
+    // Calibration frames self-estimate their own body-yaw angle (fed into
+    // buildUserProfile's average); live frames reuse that fixed, averaged
+    // baseline instead of a fresh per-frame estimate (see
+    // correctBodyYaw/estimateBodyYawAngle's comments — the per-frame
+    // estimate alone was confirmed too noisy).
+    const fixedYawAngle = calibrationFrames ? undefined : profile?.originalCenters.bodyYawAngle;
     const feature = toFrameFeature(
       correctedLandmarks,
       timestamp,
       previousFeature,
       correctedHands,
+      fixedYawAngle,
     );
     previousFeature = feature;
     previousLandmarks = correctedLandmarks;

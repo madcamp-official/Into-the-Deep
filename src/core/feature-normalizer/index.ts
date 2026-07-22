@@ -129,14 +129,7 @@ const MIN_SHOULDER_XZ_DISTANCE = 0.02;
  * body yaw and undo it: the shoulder line's z gap is ~0 when facing the
  * camera directly and grows as the body turns. Rotating every landmark's
  * (x, z) around the shoulder midpoint by the negative of that angle
- * reprojects the frame as though shot from directly in front. Applied
- * before any other feature is computed, so it benefits calibration frames
- * and live frames the same way.
- *
- * Experimental: z is known to be noisier than x/y (see the
- * shoulderDepthAsymmetry comment below), so this hasn't been verified
- * beyond the specific side-angle-calibration case that motivated it —
- * needs live re-verification, not just this comment.
+ * reprojects the frame as though shot from directly in front.
  *
  * Assumes the same left/right sign convention as rawShoulderTilt below
  * (leftShoulder.x > rightShoulder.x in an unmirrored, facing-camera frame):
@@ -148,9 +141,14 @@ const MIN_SHOULDER_XZ_DISTANCE = 0.02;
  * hold here too — but flagging it since a violation would fail loudly.
  */
 // Exposed separately from correctBodyYaw so callers (e.g. the capture-panel
-// debug display) can show the raw computed angle in degrees — the only way
-// to tell, live, whether this is a stable estimate or just noise from
-// MediaPipe's known-noisier z coordinate.
+// debug display, and profile-builder averaging it over calibration frames)
+// can get the raw computed angle. Confirmed live: re-estimating this fresh
+// every live frame is too noisy to be usable on its own (the same held
+// posture swung 27 degrees frame to frame) — z is noisier than x/y, and the
+// per-frame estimate amplifies even small real movement into large angle
+// swings. toFrameFeature below now only calls this during calibration (to
+// build a single averaged baseline); live frames reuse that fixed baseline
+// instead of a fresh per-frame estimate.
 export function estimateBodyYawAngle(landmarks: NormalizedLandmark[]): number | undefined {
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
@@ -164,13 +162,13 @@ export function estimateBodyYawAngle(landmarks: NormalizedLandmark[]): number | 
   return Number.isFinite(yawAngle) ? yawAngle : undefined;
 }
 
-export function correctBodyYaw(landmarks: NormalizedLandmark[]): NormalizedLandmark[] {
+function rotateLandmarksAroundShoulderPivot(
+  landmarks: NormalizedLandmark[],
+  yawAngle: number,
+): NormalizedLandmark[] {
   const leftShoulder = landmarks[LANDMARK_INDEX.leftShoulder];
   const rightShoulder = landmarks[LANDMARK_INDEX.rightShoulder];
   if (!leftShoulder || !rightShoulder) return landmarks;
-
-  const yawAngle = estimateBodyYawAngle(landmarks);
-  if (yawAngle === undefined || yawAngle === 0) return landmarks;
 
   const pivotX = (leftShoulder.x + rightShoulder.x) / 2;
   const pivotZ = (leftShoulder.z + rightShoulder.z) / 2;
@@ -186,6 +184,21 @@ export function correctBodyYaw(landmarks: NormalizedLandmark[]): NormalizedLandm
       z: pivotZ - relativeX * sin + relativeZ * cos,
     };
   });
+}
+
+// `fixedYawAngle`: pass the profile's averaged calibration-time angle for
+// live frames; omit it (calibration frames only) to self-estimate fresh so
+// profile-builder has per-frame samples to average. Always returns the
+// angle actually used (or undefined if none could be determined) so the
+// caller can record/display it. Exported for direct unit testing of the
+// rotation math; toFrameFeature below is the only real caller.
+export function correctBodyYaw(
+  landmarks: NormalizedLandmark[],
+  fixedYawAngle?: number,
+): { landmarks: NormalizedLandmark[]; yawAngle: number | undefined } {
+  const yawAngle = fixedYawAngle ?? estimateBodyYawAngle(landmarks);
+  if (yawAngle === undefined || yawAngle === 0) return { landmarks, yawAngle };
+  return { landmarks: rotateLandmarksAroundShoulderPivot(landmarks, yawAngle), yawAngle };
 }
 
 // FrameFeature calculation described in plan.md section 8. Coordinates are
@@ -205,13 +218,20 @@ export function correctBodyYaw(landmarks: NormalizedLandmark[]): NormalizedLandm
 // the Pose landmarks above. Omit it when the hand model isn't wired up
 // (e.g. in tests): handFaceDistance/handShoulderDistance just stay
 // undefined, same as any other missing-landmark case.
+//
+// `fixedYawAngle`: the profile's averaged calibration-time body-yaw angle
+// (radians) — pass it for live frames so they're corrected against a
+// stable baseline instead of a fresh, noisy per-frame estimate. Omit it
+// during calibration frame collection so each frame self-estimates,
+// giving profile-builder samples to average into that baseline.
 export function toFrameFeature(
   landmarksBeforeYawCorrection: NormalizedLandmark[],
   timestamp: number,
   previous?: FrameFeature | null,
   handLandmarks?: NormalizedLandmark[][],
+  fixedYawAngle?: number,
 ): FrameFeature | null {
-  const landmarks = correctBodyYaw(landmarksBeforeYawCorrection);
+  const { landmarks, yawAngle } = correctBodyYaw(landmarksBeforeYawCorrection, fixedYawAngle);
   const nose = landmarks[LANDMARK_INDEX.nose];
   const leftEye = landmarks[LANDMARK_INDEX.leftEye];
   const rightEye = landmarks[LANDMARK_INDEX.rightEye];
@@ -527,6 +547,7 @@ export function toFrameFeature(
     ...(handShoulderDistance !== undefined ? { handShoulderDistance } : {}),
     ...(correctedYaw !== undefined ? { correctedYaw } : {}),
     ...(forwardLeanProxy !== undefined ? { forwardLeanProxy } : {}),
+    ...(yawAngle !== undefined ? { bodyYawAngle: yawAngle } : {}),
     shoulderWidthRatio,
   };
 }

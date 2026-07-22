@@ -454,9 +454,10 @@ describe("correctBodyYaw", () => {
       rightShoulder: { x: 0.4, y: 0.6, z: 0, visibility: 1 },
     });
 
-    const corrected = correctBodyYaw(landmarks);
+    const { landmarks: corrected, yawAngle } = correctBodyYaw(landmarks);
 
     expect(corrected).toEqual(landmarks);
+    expect(yawAngle).toBe(0);
   });
 
   it("zeroes the shoulder z-gap and preserves the true 3D shoulder distance when the body is rotated", async () => {
@@ -467,10 +468,11 @@ describe("correctBodyYaw", () => {
       rightShoulder: { x: 0.4, y: 0.6, z: -0.1, visibility: 1 },
     });
 
-    const corrected = correctBodyYaw(landmarks);
+    const { landmarks: corrected, yawAngle } = correctBodyYaw(landmarks);
     const left = corrected[LANDMARK_INDEX.leftShoulder];
     const right = corrected[LANDMARK_INDEX.rightShoulder];
 
+    expect(yawAngle).toBeCloseTo(Math.PI / 4, 5);
     // z-gap collapses to ~0 (as though shot from directly in front)...
     expect(left.z - right.z).toBeCloseTo(0, 5);
     // ...while the true 3D shoulder distance (hypot(0.2, 0.2)) is preserved
@@ -489,7 +491,7 @@ describe("correctBodyYaw", () => {
       nose: { x: 0.5, y: 0.4, z: 0, visibility: 1 },
     });
 
-    const corrected = correctBodyYaw(landmarks);
+    const { landmarks: corrected } = correctBodyYaw(landmarks);
     const nose = corrected[LANDMARK_INDEX.nose];
 
     // Pivot is the shoulder midpoint (0.5, 0.6, 0); nose sits directly above
@@ -501,6 +503,23 @@ describe("correctBodyYaw", () => {
     expect(nose.z).toBeCloseTo(0, 5);
   });
 
+  it("uses a fixed yaw angle instead of self-estimating when one is supplied", async () => {
+    const { correctBodyYaw } = await import("./index");
+    // Shoulder line reports ~0 rotation, but a fixed baseline of 45 degrees
+    // (e.g. from profile.originalCenters.bodyYawAngle) should still apply.
+    const landmarks = createLandmarks({
+      leftShoulder: { x: 0.6, y: 0.6, z: 0, visibility: 1 },
+      rightShoulder: { x: 0.4, y: 0.6, z: 0, visibility: 1 },
+    });
+
+    const { landmarks: corrected, yawAngle } = correctBodyYaw(landmarks, Math.PI / 4);
+    const left = corrected[LANDMARK_INDEX.leftShoulder];
+    const right = corrected[LANDMARK_INDEX.rightShoulder];
+
+    expect(yawAngle).toBe(Math.PI / 4);
+    expect(left.z - right.z).not.toBeCloseTo(0, 5);
+  });
+
   it("skips correction when the shoulder line is too degenerate to derive a reliable angle from", async () => {
     const { correctBodyYaw } = await import("./index");
     const landmarks = createLandmarks({
@@ -508,6 +527,8 @@ describe("correctBodyYaw", () => {
       rightShoulder: { x: 0.5, y: 0.6, z: 0, visibility: 1 },
     });
 
-    expect(correctBodyYaw(landmarks)).toEqual(landmarks);
+    const { landmarks: corrected, yawAngle } = correctBodyYaw(landmarks);
+    expect(corrected).toEqual(landmarks);
+    expect(yawAngle).toBeUndefined();
   });
 });
