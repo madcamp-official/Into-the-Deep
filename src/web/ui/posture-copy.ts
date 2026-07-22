@@ -82,3 +82,15 @@ export function describePresenceDetail(
   }
   return "카메라 각도나 조명을 조금 조정해보세요.";
 }
+
+// Fired once when tracking recovers after a sustained NO_PERSON/UNKNOWN
+// stretch (one that was itself long enough to have shown a presence alert) —
+// lets the user know posture checks have resumed without waiting for the
+// next bad-posture nudge to notice.
+export function describePersonRecoveredLabel(): string {
+  return "사람이 인식되었습니다";
+}
+
+export function describePersonRecoveredDetail(): string {
+  return "다시 자세를 확인할게요.";
+}

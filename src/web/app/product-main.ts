@@ -24,6 +24,8 @@ import { SessionAudioNotifier } from "../session-audio";
 import { CalibrationFlow } from "../ui/calibration-flow";
 import { FairyWidget } from "../ui/fairy-widget";
 import {
+  describePersonRecoveredDetail,
+  describePersonRecoveredLabel,
   describePostureDetail,
   describePostureLabel,
   describePresenceDetail,
@@ -268,6 +270,12 @@ async function main() {
       console.error("failed to persist calibration profile", error);
     }
 
+    // Lets this run's detector window (and any calibration window reopened
+    // later in the same run) trust the profile just saved instead of
+    // forcing calibration again — see runCalibrated above and
+    // calibratedThisRun in electron/main.cjs. No-op on the plain web build.
+    window.electronAPI?.markRunCalibrated();
+
     calibration.showResult(true, "이제부터 바른 자세를 도와드릴게요.", () => {
       hideCalibrationUI();
       startLoop();
@@ -286,10 +294,24 @@ async function main() {
   // aren't reliable), so they can't fight over the same fairy instance.
   let noPersonSince: number | null = null;
   let noPersonFairyLastShownAt = 0;
+  let noPersonFairyShowing = false;
+  // Mirrors the noPerson* trio above but for "a person is in frame but
+  // landmarks aren't reliable enough to read posture" (describeUnreliableState
+  // returning "UNKNOWN") — the other half of the !quality.reliable branch,
+  // so it needs its own trigger-delay/cooldown state to not fight noPerson's.
+  let unknownSince: number | null = null;
+  let unknownFairyLastShownAt = 0;
+  let unknownFairyShowing = false;
 
   // ---- decide calibration vs. resume on load -------------------------
   try {
-    const stored = await loadProfiles();
+    // Inside the Electron shell, a saved profile left over from a run
+    // before the last power-off/power-on isn't enough on its own to skip
+    // calibration — only trust it if this same app run already calibrated
+    // once (electronAPI is absent on the plain web build, which has no such
+    // "run" concept and keeps resuming from IndexedDB as before).
+    const runCalibrated = (await window.electronAPI?.getRunCalibrated()) ?? true;
+    const stored = runCalibrated ? await loadProfiles() : null;
     if (stored) {
       activateProfile(stored.userProfile, stored.cameraProfile);
       setStatus("idle", "저장된 자세 기준을 불러왔어요");
@@ -341,27 +363,52 @@ async function main() {
       );
 
       if (presenceState === "NO_PERSON") {
+        unknownSince = null;
+        unknownFairyShowing = false;
         if (noPersonSince === null) noPersonSince = timestamp;
         const sustainedMs = timestamp - noPersonSince;
         const canRetrigger =
-          !fairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
+          !noPersonFairyShowing || timestamp - noPersonFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
         if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
           fairy.show(
             describePresenceDetail(presenceState, wasTracking),
             describePresenceLabel(presenceState, wasTracking),
           );
           noPersonFairyLastShownAt = timestamp;
-          fairyShowing = true;
+          noPersonFairyShowing = true;
         }
       } else {
         noPersonSince = null;
+        noPersonFairyShowing = false;
+        if (unknownSince === null) unknownSince = timestamp;
+        const sustainedMs = timestamp - unknownSince;
+        const canRetrigger =
+          !unknownFairyShowing || timestamp - unknownFairyLastShownAt > FAIRY_RETRIGGER_COOLDOWN_MS;
+        if (sustainedMs >= FAIRY_TRIGGER_DELAY_MS && canRetrigger) {
+          fairy.show(
+            describePresenceDetail(presenceState, wasTracking),
+            describePresenceLabel(presenceState, wasTracking),
+          );
+          unknownFairyLastShownAt = timestamp;
+          unknownFairyShowing = true;
+        }
       }
 
       requestAnimationFrame(loop);
       return;
     }
 
+    if (noPersonFairyShowing || unknownFairyShowing) {
+      // Only announce recovery if the corresponding "not detected"/"not
+      // recognized" alert had actually fired (past its own trigger delay) —
+      // otherwise a sub-2.5s flicker would announce a loss that was never
+      // actually shown to the user.
+      fairy.show(describePersonRecoveredDetail(), describePersonRecoveredLabel());
+    }
     noPersonSince = null;
+    noPersonFairyShowing = false;
+    unknownSince = null;
+    unknownFairyShowing = false;
     trackedAnchor = anchorFromLandmarks(landmarks) ?? trackedAnchor;
 
     const handResult = detectHandsForVideoFrame(handLandmarker, video, timestamp);
