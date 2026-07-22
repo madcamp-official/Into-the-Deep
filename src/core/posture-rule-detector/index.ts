@@ -21,7 +21,15 @@ const AMBIGUITY_RATIO = 0.9;
 // currently commented out in posture-rules/index.ts, so this is a no-op
 // until that's re-enabled — left in place so both fixes apply together
 // then instead of this silently regressing.)
-const SILENT_POSTURES: ReadonlySet<PostureRule["postureType"]> = new Set(["HEAD_TURN"]);
+//
+// HEAD_BACK added for the same reason: confirmed live that drinking water
+// (tilting the head back briefly) reliably fires HEAD_BACK and, held just
+// long enough, crosses the sustained-alert threshold — a transient action
+// (feature_discussion's TRANSIENT_ACTION category), not a posture problem,
+// with no separate feature (e.g. hand-to-mouth) to tell the two apart by
+// shape alone. Silencing the alert avoids nagging the user every time they
+// take a sip, while still recording it as BAD for other consumers.
+const SILENT_POSTURES: ReadonlySet<PostureRule["postureType"]> = new Set(["HEAD_TURN", "HEAD_BACK"]);
 
 // motionEnergy is a raw single-frame delta of already-smoothed features
 // (feature-normalizer's SMOOTHING_ALPHA is only 0.3), so landmark jitter
