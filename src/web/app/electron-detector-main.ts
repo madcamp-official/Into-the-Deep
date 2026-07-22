@@ -24,6 +24,9 @@ import {
   describePostureLabel,
   describePresenceDetail,
   describePresenceLabel,
+  RECALIBRATION_PROMPT_BUTTON_LABEL,
+  RECALIBRATION_PROMPT_NOTE,
+  shouldPromptRecalibration,
 } from "../ui/posture-copy";
 import type { FrameFeature, MADProfile } from "../../core/types";
 
@@ -240,6 +243,9 @@ async function main(): Promise<void> {
           title: describePostureLabel(event),
           message: describePostureDetail(event, feedback.message),
           persist: true,
+          action: shouldPromptRecalibration(event.postureType)
+            ? { note: RECALIBRATION_PROMPT_NOTE, buttonLabel: RECALIBRATION_PROMPT_BUTTON_LABEL }
+            : undefined,
         });
         fairyShowing = true;
         fairyMessageKey = event.postureType ?? null;

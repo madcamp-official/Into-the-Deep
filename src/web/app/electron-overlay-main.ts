@@ -13,8 +13,17 @@ const fairy = new FairyWidget(document.body, {
   onHoverChange: (hovering) => electronAPI.setIgnoreMouseEvents(!hovering),
 });
 
-electronAPI.onPostureAlert(({ title, message, persist }) => {
-  fairy.show(message, title, { persist });
+electronAPI.onPostureAlert(({ title, message, persist, action }) => {
+  fairy.show(message, title, {
+    persist,
+    action: action
+      ? {
+          note: action.note,
+          buttonLabel: action.buttonLabel,
+          onClick: () => electronAPI.requestRecalibration(),
+        }
+      : undefined,
+  });
 });
 
 // Bad-posture alerts are sent with persist:true (see electron-detector-main.ts)

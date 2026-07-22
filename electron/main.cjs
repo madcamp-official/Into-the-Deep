@@ -110,7 +110,10 @@ function createDetectorWindow() {
 function createOverlayWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const width = 360;
-  const height = 260;
+  // Tall enough for the fairy sprite + a bubble with title, a two-line
+  // message, and the optional recalibration-prompt action row (note +
+  // button) that FORWARD_HEAD/TORSO_TWIST alerts add below the message.
+  const height = 320;
 
   overlayWindow = new BrowserWindow({
     x: Math.round(workArea.x + workArea.width - width - 8),
@@ -340,6 +343,13 @@ ipcMain.on("open-external", (_event, url) => {
 // making the user find the tray icon — "바로 진행" is the point of having
 // this launch automatically at login.
 ipcMain.on("no-profile", () => {
+  openCalibrationWindow();
+});
+
+// Fairy's "재측정" action button (FORWARD_HEAD/TORSO_TWIST alerts — the user
+// may have moved the laptop/camera itself rather than actually slouched) —
+// same window-opening path as the tray's "캘리브레이션 시작".
+ipcMain.on("request-recalibration", () => {
   openCalibrationWindow();
 });
 

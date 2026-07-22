@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // profile yet; main.cjs reacts by auto-opening the calibration window.
   notifyNoProfile: () => ipcRenderer.send("no-profile"),
 
+  // Sent by the overlay window when the fairy's "재측정" action button is
+  // clicked (FORWARD_HEAD/TORSO_TWIST alerts only — see PostureAlertPayload.action);
+  // main.cjs reacts the same way as the tray's "캘리브레이션 시작".
+  requestRecalibration: () => ipcRenderer.send("request-recalibration"),
+
   // Whether calibration has already completed once during this run of the
   // app (main process lifetime) — resets to false on every app launch, so a
   // saved profile left over from before a power-off/power-on isn't enough on

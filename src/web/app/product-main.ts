@@ -30,6 +30,9 @@ import {
   describePostureLabel,
   describePresenceDetail,
   describePresenceLabel,
+  RECALIBRATION_PROMPT_BUTTON_LABEL,
+  RECALIBRATION_PROMPT_NOTE,
+  shouldPromptRecalibration,
 } from "../ui/posture-copy";
 import type {
   CameraProfile,
@@ -335,11 +338,18 @@ async function main() {
     runCalibration();
   }
 
-  settingsBtn.onclick = () => {
+  // Shared by the manual "⟳" button and the fairy's "재측정" action button
+  // (FORWARD_HEAD/TORSO_TWIST — see loop()'s event.alert branch): resets
+  // detection state and jumps straight into calibration.
+  function triggerRecalibration(): void {
     detector = null;
     trackedAnchor = null;
+    fairyShowing = false;
+    fairyMessageKey = null;
     runCalibration();
-  };
+  }
+
+  settingsBtn.onclick = () => triggerRecalibration();
 
   function startLoop(): void {
     if (loopStarted) return;
@@ -463,7 +473,16 @@ async function main() {
       // corrected (the `else` branch below); only re-calls show() on the
       // initial trigger or when the dominant issue changes, not every frame.
       if (!fairyShowing || fairyMessageKey !== event.postureType) {
-        fairy.show(describePostureDetail(event, feedback.message), label, { persist: true });
+        fairy.show(describePostureDetail(event, feedback.message), label, {
+          persist: true,
+          action: shouldPromptRecalibration(event.postureType)
+            ? {
+                note: RECALIBRATION_PROMPT_NOTE,
+                buttonLabel: RECALIBRATION_PROMPT_BUTTON_LABEL,
+                onClick: () => triggerRecalibration(),
+              }
+            : undefined,
+        });
         fairyShowing = true;
         fairyMessageKey = event.postureType ?? null;
       }

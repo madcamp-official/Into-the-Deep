@@ -10,6 +10,14 @@ export interface PostureAlertPayload {
   // is sent instead of auto-hiding after a few seconds — see FairyWidget's
   // `persist` show() option and electron-detector-main.ts's loop().
   persist?: boolean;
+  // FORWARD_HEAD/TORSO_TWIST only (see shouldPromptRecalibration in
+  // posture-copy.ts) — note + button text for the fairy's recalibration
+  // prompt. The overlay wires the button itself to requestRecalibration();
+  // there's no per-payload callback since it's always the same action.
+  action?: {
+    note: string;
+    buttonLabel: string;
+  };
 }
 
 // Sent by main.cjs on macOS only, where electron-updater's silent
@@ -34,6 +42,10 @@ export interface ElectronAPI {
   openExternal(url: string): void;
   setIgnoreMouseEvents(ignore: boolean): void;
   notifyNoProfile(): void;
+  // Sent when the fairy's "재측정" action button (see PostureAlertPayload.action)
+  // is clicked — main.cjs reacts the same way as the tray's "캘리브레이션
+  // 시작": opens the calibration window.
+  requestRecalibration(): void;
   // Whether calibration already completed once during this app run — see
   // calibratedThisRun in electron/main.cjs.
   getRunCalibrated(): Promise<boolean>;
