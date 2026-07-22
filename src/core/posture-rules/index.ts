@@ -40,6 +40,17 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // enough not to repeat the old "blocked genuine detections" failure,
       // tight enough to exclude a real whole-body camera-distance change.
       { feature: "bodyScale", operator: "ABS_LT", threshold: 2, reference: "CALIBRATION" },
+      // shoulderCenterY GT added: tilting the camera itself (not leaning
+      // toward it) also pushes faceToShoulderRatio and bodyScale into
+      // FORWARD_HEAD's range, with no real posture change at all. Live
+      // testing (staying in a genuinely correct posture, only tilting the
+      // camera) across 4 captures scored shoulderCenterY -3.55/-3.57/-4.76/
+      // -5.91 — consistently large and negative, since tilting shifts the
+      // person's whole vertical position in frame. Genuine FORWARD_HEAD
+      // captures (leaning toward the camera, camera untouched) scored
+      // 1.29-2.00 — consistently positive and modest, since the camera
+      // itself doesn't move. 0.5 sits cleanly in the gap between them.
+      { feature: "shoulderCenterY", operator: "GT", threshold: 0.5, reference: "CALIBRATION" },
     ],
     supporting: ["headShoulderDistanceRatio", "pitchProxy"],
     reason: "head is forward relative to the calibrated shoulder position",

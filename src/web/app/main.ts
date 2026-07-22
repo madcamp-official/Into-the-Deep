@@ -1220,26 +1220,16 @@ async function main() {
     );
     latestEvent = event;
     latestV2Event = v2Event;
-    const cameraStateKind = cameraAssessment.state === "RECALIBRATION_REQUIRED"
-      ? "bad"
-      : cameraAssessment.state === "UNKNOWN"
-        ? "unknown"
-        : "good";
 
+    // Alert banners always reflect V0/V2 posture judgment directly — no
+    // camera-recalibration/camera-movement/verification-mode banner
+    // overrides. (cameraAssessment is still computed and fed into the
+    // recorder and correction pipeline above; this only affects what the
+    // banners display.)
     if (!postureDetector) {
       setAlertBanner(v0AlertBanner, "idle", "V0: 캘리브레이션 후 측정을 시작하세요");
       setAlertBanner(v2AlertBanner, "idle", "V2: 캘리브레이션 후 측정을 시작하세요");
-    } else if (cameraAssessment.state === "RECALIBRATION_REQUIRED") {
-      setAlertBanner(v0AlertBanner, "bad", "Camera recalibration required");
-      setAlertBanner(v2AlertBanner, "bad", "Camera recalibration required");
-    } else if (
-      verificationActive ||
-      currentMotionPhase !== "STABLE" ||
-      cameraAssessment.state === "UNKNOWN"
-    ) {
-      setAlertBanner(v0AlertBanner, "idle", "Camera movement: posture judgment paused");
-      setAlertBanner(v2AlertBanner, "idle", "Camera movement: posture judgment paused");
-    } else if (!cameraVerificationMode) {
+    } else {
       // V0/V2 are judged and shown independently — they can (and are
       // expected to) disagree, that's the whole point of comparing them.
       if (event?.alert) {
@@ -1260,26 +1250,6 @@ async function main() {
       } else {
         setAlertBanner(v2AlertBanner, "good", "V2: 정상 자세입니다");
       }
-    } else {
-      const baselineReferenceStatus = verificationActive
-        ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} active`
-        : baselineAssessment
-          ? baselineVerificationKind
-            ? `${baselineVerificationKind === "POST_MOTION" ? "post-motion" : "startup"} complete`
-            : "calibration ready"
-          : backgroundReference
-            ? "not started"
-            : "unavailable";
-      setAlertBanner(
-        v0AlertBanner,
-        "idle",
-        `Camera baseline verification: ${baselineReferenceStatus}`,
-      );
-      setAlertBanner(
-        v2AlertBanner,
-        cameraStateKind,
-        `Camera state: ${cameraAssessment.state} (${cameraAssessment.motionPhase ?? "STABLE"})`,
-      );
     }
 
     const displayedCameraTransform = baselineAssessment?.transform ?? referenceTransform ?? cameraTransform;
