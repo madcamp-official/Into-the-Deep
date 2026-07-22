@@ -48,7 +48,12 @@ export const DEFAULT_POSTURE_RULES: readonly PostureRule[] = [
       // cleanly separate these cases at any threshold, confirmed by the
       // replay's own sweep). 0.7 splits the difference (replay: NORMAL_WORK
       // 8.5%, genuine recall 53.4%) — still a compromise, not a fix.
-      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.7, reference: "CALIBRATION" },
+      // Raised 0.7 -> 0.9: user reported FORWARD_HEAD feeling slightly too
+      // sensitive after the 56e0bb6 revert; live captures showed
+      // faceToShoulderRatio scoring 0.87/0.93/1.08 against this calibration
+      // — right at the old threshold's edge. 0.9 pushes the two lower ones
+      // below 1 while still leaving room for a clearly-held hold.
+      { feature: "faceToShoulderRatio", operator: "GT", threshold: 0.9, reference: "CALIBRATION" },
       // Re-added with a wider threshold than the earlier attempt (removed
       // above): live testing confirmed moving substantially closer to the
       // camera (no real posture change) scores bodyScale ~3.14, while
