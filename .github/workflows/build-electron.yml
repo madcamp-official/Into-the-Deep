@@ -12,15 +12,22 @@ name: Build Electron App
 #  - push to the branch / manual dispatch: build + upload as a plain
 #    Actions artifact, for quick "does it still build" checks. Downloadable
 #    from the run page, but not a versioned release.
-#  - pushing a "v*" tag: builds AND publishes straight to a real (non-draft)
-#    GitHub Release via electron-builder's own --publish always (see
-#    "release:win"/"release:mac" in package.json — build.publish there points
-#    at this repo with releaseType "release"). This is also what makes
-#    auto-update work: --publish is what generates and uploads latest.yml /
-#    latest-mac.yml / *.blockmap alongside the installers, which is the feed
-#    electron-updater (electron/main.cjs) polls on already-installed clients.
-#    No human approval step — a tag push goes live to users automatically,
-#    by design (see feature/product-frontend-ui history).
+#  - pushing a "v*" tag: create-release pre-creates a real (non-draft)
+#    GitHub Release with a fixed title/body (electron/RELEASE_NOTES.md,
+#    version-substituted) BEFORE either platform builds — electron-builder
+#    finds that existing release by tag and just attaches its own artifacts
+#    to it (confirmed behavior: it reuses an existing non-draft release
+#    published under 2h ago rather than erroring or recreating it), so the
+#    release always shows the same maintained description instead of a
+#    blank/auto-generated one. --publish always is also what generates and
+#    uploads latest.yml / *.blockmap alongside the Windows installer — the
+#    feed electron-updater (electron/main.cjs) polls on already-installed
+#    clients. No human approval step — a tag push goes live to users
+#    automatically, by design.
+#
+#    mac ships dmg-only (see package.json's "mac" target) — no zip/
+#    latest-mac.yml, since Squirrel.Mac auto-update needs code signing this
+#    repo doesn't have and would just be unusable clutter in the release.
 on:
   workflow_dispatch:
   push:
@@ -33,7 +40,31 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render release notes and create/update the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed "s/{{VERSION}}/${VERSION}/g" electron/RELEASE_NOTES.md > /tmp/release-notes.md
+          TITLE="v${VERSION} — 바른 자세 코치 요정 (Windows/macOS)"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" --title "${TITLE}" --notes-file /tmp/release-notes.md
+          else
+            gh release create "${GITHUB_REF_NAME}" --title "${TITLE}" --notes-file /tmp/release-notes.md
+          fi
+
   build:
+    needs: create-release
+    # Runs even when create-release was skipped (plain branch push/dispatch,
+    # not a tag) — its own steps below are what actually gate on the ref.
+    if: always()
     strategy:
       fail-fast: false
       matrix:
