@@ -1515,12 +1515,22 @@ function formatFeatureSnapshot(
     const v0Score = normalizeFeature(value, center, v0MadProfile.values[featureName]);
     const v2Score = normalizeFeature(value, center, v2MadProfile.values[featureName]);
     // Some rule conditions (e.g. CHIN_REST's handFaceDistance) use
-    // reference: "ABSOLUTE" (center 0) instead of CALIBRATION, which the
-    // scores above don't reflect. Show it whenever the calibration center
-    // isn't set, so what's on screen matches what that condition actually
-    // sees. v0/v2 use the same MAD basis for this so one value is enough.
-    const absoluteScore =
-      v0Score === undefined ? normalizeFeature(value, 0, v0MadProfile.values[featureName]) : undefined;
+    // reference: "ABSOLUTE" (center 0) instead of CALIBRATION. Previously
+    // this was only shown when the calibration center was missing entirely
+    // — but a feature can have a (meaningless, per CHIN_REST's own
+    // comments) CALIBRATION center *and* still be judged by an ABSOLUTE
+    // condition, and in that case this panel silently hid the actual value
+    // the rule checks. Confirmed live: three handFaceDistance captures
+    // (0.199/0.268/0.383, all genuine chin-rest) only showed their
+    // CALIBRATION-basis scores, not ABSOLUTE — no way to tell from the
+    // panel alone why the third one didn't match CHIN_REST. Always compute
+    // it now, and show it whenever it's undefined-vs-defined or differs
+    // from the CALIBRATION-basis score, the same "only show when it adds
+    // information" rule already used for the v0-vs-v2 split above. v0/v2
+    // use the same MAD basis for this so one value is enough.
+    const absoluteScore = normalizeFeature(value, 0, v0MadProfile.values[featureName]);
+    const absoluteScoreDiffers =
+      absoluteScore !== undefined && (v0Score === undefined || Math.abs(absoluteScore - v0Score) > 0.01);
     const scoresDiffer =
       v0Score !== undefined && v2Score !== undefined && Math.abs(v0Score - v2Score) > 0.01;
     lines.push(
@@ -1530,7 +1540,7 @@ function formatFeatureSnapshot(
           : v0Score !== undefined
             ? `  (score=${v0Score.toFixed(2)})`
             : "") +
-        (absoluteScore !== undefined ? `  (abs=${absoluteScore.toFixed(2)})` : ""),
+        (absoluteScoreDiffers ? `  (abs=${(absoluteScore as number).toFixed(2)})` : ""),
     );
   }
   return lines.join("\n");
