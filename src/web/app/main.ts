@@ -25,6 +25,7 @@ import { assessLandmarkQuality, describeUnreliableState } from "../../core/landm
 import { buildUserProfile } from "../../core/profile-builder";
 import { createInitialMADProfile, normalizeFeature } from "../../core/mad-profile";
 import { PostureRuleDetector } from "../../core/posture-rule-detector";
+import { SIDE_ANGLE_POSTURE_RULES } from "../../core/posture-rules";
 import { V2MadUpdater } from "../../core/v2-mad-updater";
 
 // A single-frame motionEnergy threshold alone can't separate landmark
@@ -514,12 +515,25 @@ async function main() {
     cameraProfile = nextCameraProfile;
     madProfile = nextMadProfile;
     v0MadProfile = nextMadProfile;
+    // Same branch as fixedYawAngle's below (MIN_CORRECTED_YAW_ANGLE): only
+    // TORSO_TWIST's rule actually differs between the two rule sets (see
+    // posture-rules/index.ts's SIDE_ANGLE_POSTURE_RULES comment) — a
+    // side-angle-corrected calibration can swing shoulderWidthRatio's sign
+    // either way depending on twist direction, which the frontal version's
+    // directional check can't handle.
+    const calibratedYawAngleForRules = nextProfile.originalCenters.bodyYawAngle;
+    const rules =
+      calibratedYawAngleForRules !== undefined &&
+      Math.abs(calibratedYawAngleForRules) >= MIN_CORRECTED_YAW_ANGLE
+        ? SIDE_ANGLE_POSTURE_RULES
+        : undefined;
     // v0 is the zero-latency baseline: alert fires the instant a rule
     // matches, no sustained-dwell delay and no motion-energy hold.
-    postureDetector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 0 });
+    postureDetector = new PostureRuleDetector(profile, madProfile, { sustainedSeconds: 0, rules });
     v2PostureDetector = new PostureRuleDetector(profile, madProfile, {
       motionEnergyGate: V2_MOTION_ENERGY_GATE,
       sustainedSeconds: 5,
+      rules,
     });
     v2MadUpdater = new V2MadUpdater(madProfile, { centers: nextProfile.originalCenters });
     recordButton.disabled = false;
