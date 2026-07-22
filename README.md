@@ -1,6 +1,6 @@
 # 26s-w3-c3-06
 
-## <!-- 공식 과제 설명 (과제명, 선택 옵션 표 등) — 직접 채워주세요 -->
+## 
 
 **산출물:** PostureCore — 웹캠 기반 개인화 자세 drift 탐지 코어 + 화면 위 요정 알림 UI ("PostureFairy")
 
@@ -26,17 +26,9 @@
 
 | 이름 | 학교 | GitHub | 역할 |
 |---|---|---|---|
-| | | | A (카메라/랜드마크/feature) |
-| | | | B (profile/rule/camera 판정) |
-| | | | C (시간 상태/평가) |
-
----
-
-## 선택 옵션
-
-<!-- 직접 채워주세요 -->
-
-- [x] Option 1. Build the Core
+| 김혜리 | 한양대학교 | https://github.com/ireyhye | A (카메라/랜드마크/feature) |
+| 조예준 | KAIST | https://github.com/jossi-jossi | B (profile/rule/camera 판정) |
+| 정유진 | 고려대학교 | https://github.com/yujin923 | C (시간 상태/평가) |
 
 ---
 
@@ -64,15 +56,7 @@
 - 카메라 정면 기준 약 30도 이내(정면)와 그 이상 벗어난 측면 캘리브레이션을 각각 지원
 - 작은 카메라 거리·위치·기울기 변화는 제한적으로 자동 보정, 범위를 넘으면 경고 대신 재캘리브레이션 요청
 - 원본 영상·얼굴 이미지는 저장하지 않음 — posture profile은 IndexedDB, 평가 로그는 JSONL
-- 서버, 로그인, 계정 동기화 없음
 
-### 개발 일정 (3일 병렬 개발 기준)
-
-| 일차 | 목표 |
-|---|---|
-| 1일차 | 공통 타입/Feature 계약 동결, A/B/C 병렬 코어 개발(Feature, Profile·Rule, State Machine·평가), 실제 카메라 통합 |
-| 2일차 | 남은 기능 보완, Development Session으로 threshold 확정, 웹 배포, Electron 데스크톱 패키징(Windows/macOS/Linux) |
-| 3일차 | 별도 Test Session으로 최종 검증(threshold 고정), README·발표 자료 정리 |
 
 ---
 
@@ -202,8 +186,6 @@ docs/             # 설계 노트, 발표/데모 자료
 
 3명이 같은 코어를 병렬로 건드리는 프로젝트라 아래 규칙으로 충돌을 줄인다.
 
-- **브랜치**: `<role>/<topic>` (역할은 `a`/`b`/`c`, 주제는 한두 단어). 항상 최신 `main`에서 새로 분기하고, 끝나면 GitHub PR로 `main`에 바로 머지 — 중간 통합 브랜치는 두지 않는다.
-- **소유권**: 다른 사람 브랜치는 만들거나 push하거나 지우지 않는다.
 - **담당 폴더**:
   | 역할 | 담당 영역 |
   | --- | --- |
@@ -211,8 +193,7 @@ docs/             # 설계 노트, 발표/데모 자료
   | B | profile/score/camera 판정 — `src/core/profile-builder`, `src/core/fixed-threshold-detector`, `src/core/personalized-detector`, `src/web/indexeddb-storage`, 카메라 상태 판정 |
   | C | 시간 상태/평가 — `src/core/temporal-state-machine`, `src/core/feedback-generator`, `src/evaluation/*` |
   | 공용 | `src/core/types.ts`, `src/web/app/main.ts`, `sample-data/`, `docs/`, `README.md` — 필드 추가는 자유, 삭제/타입 변경은 다른 담당자에게 먼저 알리기 |
-- **머지 전 로컬 확인**: `npm run lint && npm run typecheck && npm run build` (CI와 동일하게 검사).
-- force-push 금지, `git add -A` 대신 필요한 파일만 스테이징.
+
 
 ---
 
@@ -222,18 +203,35 @@ docs/             # 설계 노트, 발표/데모 자료
 
 ### Keep
 
--
+- **라이브 캡처 + 세션 리플레이 기반 검증**: threshold나 룰을 감으로 바꾸지 않고, 실제 캘리브레이션 세션을 JSONL로 녹화해서 groundTruth 라벨 기준 confusion matrix로 항상 전/후를 비교했다. 몇 개 캡처만 보고 판단했을 때 놓친 문제(예: NORMAL_WORK 오탐률)가 전체 세션 리플레이에서는 확연히 드러난 경우가 여러 번 있었다.
+- **V0(고정 threshold) / V2(개인화 MAD) 병행 비교 구조**: 같은 룰을 두 가지 MAD 정책으로 동시에 돌려서, 문제가 룰 자체에 있는지 V2의 MAD 적응 과정에 있는지 구분할 수 있었다(예: ARMREST_LEAN이 V0에서는 84% 정확한데 V2에서만 3%로 무너지는 걸 확인).
+- **정면/측면 캘리브레이션 규칙 완전 분리**: 처음엔 하나의 룰 세트로 두 경우를 다 처리하려다 서로의 수정이 계속 간섭했는데, `DEFAULT_POSTURE_RULES`/`SIDE_ANGLE_POSTURE_RULES`로 완전히 독립시킨 뒤로는 한쪽을 튜닝해도 다른 쪽이 깨지지 않았다.
 
 ### Problem
 
--
+- **새 feature 추가 시 등록 누락으로 인한 침묵 실패**: `faceSize`라는 새 feature를 추가하면서 MAD 기본값 테이블(`mad-profile`)에 등록하는 걸 빠뜨려, 관련 룰이 계속 조건 미달로 실패하는데도 에러 없이 조용히 안 되는 상태로 한동안 테스트가 진행됐다.
+- **작업 브랜치와 실제 실행 환경의 불일치**: dev 서버가 로컬 파일을 그대로 읽기 때문에, 코드를 커밋만 하고 main에 병합하지 않은 채로 "테스트해봤는데 안 고쳐졌다"는 상황이 여러 번 반복됐다. 실수로 main에 직접 커밋한 적도 있었다.
+- **자세 판정 규칙 간의 feature 중복**: FORWARD_HEAD/HEAD_DOWN/SHOULDER_ASYMMETRY/TORSO_TWIST 등 서로 다른 자세가 같은 feature(faceToShoulderRatio, pitchProxy, shoulderTilt 등)에서 비슷한 값을 보이는 경우가 많아, 우선순위 기반 경쟁이 예상과 다르게 뒤집히는 문제를 여러 차례 겪었다.
+- **캘리브레이션 각도에 따라 자세 신호의 부호 자체가 뒤집힘**: 같은 트위스트 동작인데도 캘리브레이션 각도/방향에 따라 어깨너비 feature가 늘어나기도 하고 줄어들기도 해서, 하나의 조건식으로 방향 무관하게 잡으려던 시도가 오히려 다른 자세와의 오탐을 늘렸다.
 
 ### Try
 
--
+- TORSO_TWIST의 반대 방향(어깨너비가 줄어드는 쪽) 트위스트도 잡을 수 있는 별도 신호 찾기.
+- ARMREST_LEAN이 V2에서 BACKWARD_LEAN에 먹히는 문제, HEAD_BACK/TORSO_TWIST가 서로 겹치는 문제 등 아직 남은 오탐 케이스 마저 해결.
+- 제품용 진입점(`product-main.ts`, `electron-detector-main.ts`)에도 지금 dev harness에만 있는 3D yaw 보정 로직을 포팅할지 결정.
+- 캘리브레이션마다 MAD가 들쭉날쭉하게 잡히는 문제의 근본 원인(세션 간 재현성)을 더 파보기.
 
 ### 팀원별 소감
 
-**:**
+**김혜리:**
 
->
+> - 카메라 이용해서 계속 테스트 하는게 좀 힘들었던 것 같습니다... 까다롭더군요 그래도 해보고 싶던 거라 만족합니다!!
+> - 만들면서 자세가 좋아졌어요
+
+**조예준:**
+
+> - 
+
+**정유진:**
+
+> - 
