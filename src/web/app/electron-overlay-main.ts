@@ -4,10 +4,14 @@ import { FairyWidget } from "../ui/fairy-widget";
 // the fairy, driven entirely by IPC from the headless detector window
 // (electron-detector-main.ts) via main.cjs. No camera/detection logic
 // here — this window only ever reacts to "posture-alert" messages.
+// electronAPI is only optional on the plain web build (see electron-api.d.ts);
+// this window is Electron-only, so it's always injected here.
+const electronAPI = window.electronAPI!;
+
 const fairy = new FairyWidget(document.body, {
-  onHoverChange: (hovering) => window.electronAPI.setIgnoreMouseEvents(!hovering),
+  onHoverChange: (hovering) => electronAPI.setIgnoreMouseEvents(!hovering),
 });
 
-window.electronAPI.onPostureAlert(({ title, message }) => {
+electronAPI.onPostureAlert(({ title, message }) => {
   fairy.show(message, title);
 });
