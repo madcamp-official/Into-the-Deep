@@ -61,6 +61,33 @@ describe("SessionRecorder development markers", () => {
     });
     expect(entries[1].metadata).toBeUndefined();
   });
+
+  it("logs feature_discussion's relative/environment fields, not just the original nine", () => {
+    const recorder = new SessionRecorder();
+    recorder.start();
+    recorder.record(
+      {
+        ...createFeature(10),
+        shoulderWidth: 0.32,
+        handFaceDistance: 0.11,
+        landmarkCoverage: 0.9,
+      },
+      "NORMAL_WORK",
+      "UNKNOWN",
+    );
+    const [entry] = recorder.stop();
+
+    expect(entry.features).toMatchObject({
+      shoulderWidth: 0.32,
+      handFaceDistance: 0.11,
+      landmarkCoverage: 0.9,
+    });
+    // still carries the original fields too
+    expect(entry.features).toMatchObject({ shoulderTilt: 0, motionEnergy: 0 });
+    // timestamp/confidence stay top-level, not duplicated inside features
+    expect(entry.features).not.toHaveProperty("timestamp");
+    expect(entry.features).not.toHaveProperty("confidence");
+  });
 });
 
 function createFeature(timestamp: number): FrameFeature {
